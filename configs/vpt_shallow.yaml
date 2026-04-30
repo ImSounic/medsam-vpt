@@ -7,7 +7,7 @@ seed: 0
 
 method_kwargs:
   n_prompts: 10            # 7,680 prompt params + ~4M decoder params
-  gradient_checkpointing: true   # ~50% memory saving on encoder activations, ~30% slower
+  gradient_checkpointing: false  # T4 has 16 GB; trade memory for speed (~30% faster)
 
 model:
   arch: vit_b
@@ -19,17 +19,17 @@ data:
   bbox_perturb_pixels: 0
 
 train:
-  batch_size: 1
+  batch_size: 4            # Colab T4 (16 GB) handles 4 at 1024px without checkpointing
   num_workers: 2
-  epochs: 1                # decoder-only plateaued at ep 8; VPT converges faster
+  epochs: 6                # decoder-only plateaued at ep 8; VPT converges faster
   lr: 5.0e-4               # higher LR than full FT — small param set, safe to push
   weight_decay: 0.0
   dice_weight: 0.5
   amp: true
-  cooldown_seconds: 60     # pause between train and val so GPU cools — prevents val-start crash
+  cooldown_seconds: 0      # not needed on Colab; set 60 if running back on a thermal-limited GPU
 
 eval:
-  batch_size: 2          # match train batch_size to avoid memory spike at end-of-epoch
+  batch_size: 1
   num_workers: 2
 
 output:
