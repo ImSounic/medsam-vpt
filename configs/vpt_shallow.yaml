@@ -19,14 +19,14 @@ data:
   bbox_perturb_pixels: 0
 
 train:
-  batch_size: 2            # Colab T4 (16 GB) at batch=2 with checkpointing is the sweet spot
+  batch_size: 1            # safe on both 8 GB laptop and 16 GB T4; bump to 2 only on >=24 GB GPUs
   num_workers: 2
   epochs: 6                # decoder-only plateaued at ep 8; VPT converges faster
   lr: 5.0e-4               # higher LR than full FT — small param set, safe to push
   weight_decay: 0.0
   dice_weight: 0.5
   amp: true
-  cooldown_seconds: 0      # not needed on Colab; set 60 if running back on a thermal-limited GPU
+  cooldown_seconds: 60     # 60s pause before val — required on thermal-limited laptop GPUs, harmless on Colab
 
 eval:
   batch_size: 1
