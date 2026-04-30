@@ -1,0 +1,33 @@
+# Core ML — assumes torch+CUDA already installed in mlenv
+# Verify torch.cuda.is_available() returns True before installing the rest
+
+# Foundation model architecture
+git+https://github.com/facebookresearch/segment-anything.git
+
+# Medical imaging utilities (provides robust HD95, Dice, etc.)
+monai>=1.3.0
+
+# PEFT methods (LoRA)
+peft>=0.10.0
+
+# Data
+numpy
+pandas
+pillow
+opencv-python-headless
+scikit-image
+
+# Config + logging
+pyyaml
+tqdm
+wandb  # optional but recommended for experiment tracking
+
+# Plotting
+matplotlib
+seaborn
+
+# Hugging Face for model downloads
+huggingface_hub
+
+# Stats
+scipy

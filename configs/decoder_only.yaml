@@ -1,0 +1,31 @@
+# Decoder-only fine-tuning of MedSAM on ISIC 2018.
+# Image encoder frozen, mask decoder trainable.
+
+name: decoder_only_seed0
+method: decoder_only
+seed: 0
+
+model:
+  arch: vit_b
+  checkpoint: checkpoints/medsam_vit_b.pth
+  image_size: 1024
+
+data:
+  root: data
+  bbox_perturb_pixels: 0   # tight bbox during training; experiment with 20 later
+
+train:
+  batch_size: 2            # 1024x1024 batch 2 fits comfortably with frozen encoder
+  num_workers: 2
+  epochs: 10               # ~3-4 hours on RTX 1000; bump to 20 if val still improving
+  lr: 1.0e-4
+  weight_decay: 0.0
+  dice_weight: 0.5         # 0.5*BCE + 0.5*Dice loss
+  amp: true                # mixed precision; major speedup
+
+eval:
+  batch_size: 2
+  num_workers: 2
+
+output:
+  checkpoint_dir: checkpoints/runs
