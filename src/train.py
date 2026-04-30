@@ -283,17 +283,25 @@ def main() -> int:
         # Restore trainable params
         trainable_state = {k: v.to(device) for k, v in ckpt["trainable_state"].items()}
         sam.load_state_dict(trainable_state, strict=False)
-        # Restore optimizer + scheduler
+        # Restore optimizer state (Adam moments, not the LR — scheduler will set that)
         if "optimizer" in ckpt:
             optimizer.load_state_dict(ckpt["optimizer"])
-        if "scheduler" in ckpt:
-            scheduler.load_state_dict(ckpt["scheduler"])
-        start_epoch = int(ckpt["epoch"]) + 1
+        # IMPORTANT: do NOT load the saved scheduler state directly. If the saved
+        # checkpoint came from a run with a different `epochs` value (e.g. a 1-epoch
+        # smoke test), its T_max baked into the state would override our new T_max
+        # and break cosine annealing. Instead, freshly-constructed scheduler is
+        # advanced to the right position by stepping `completed_epochs` times,
+        # which gives the correct LR for the new T_max.
+        completed_epochs = int(ckpt["epoch"])
+        for _ in range(completed_epochs):
+            scheduler.step()
+        start_epoch = completed_epochs + 1
         best_val = float(ckpt.get("best_val", ckpt.get("val_dice", 0.0)))
+        cur_lr = scheduler.get_last_lr()[0]
         print(
             f"[train] resumed from {latest_path} "
-            f"(completed epoch {ckpt['epoch']}, best_val={best_val:.4f}). "
-            f"Continuing at epoch {start_epoch}."
+            f"(completed epoch {completed_epochs}, best_val={best_val:.4f}). "
+            f"Continuing at epoch {start_epoch} with lr={cur_lr:.2e}."
         )
 
     t_total = time.time()
