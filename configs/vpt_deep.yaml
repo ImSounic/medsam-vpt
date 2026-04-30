@@ -1,0 +1,36 @@
+# VPT-deep: 10 prompts per transformer block + trainable mask decoder.
+# Encoder weights frozen. ~92K prompt params + ~4M decoder params.
+
+name: vpt_deep_seed0
+method: vpt_deep
+seed: 0
+
+method_kwargs:
+  n_prompts: 10            # 12 * 10 * 768 = 92,160 prompt params
+  gradient_checkpointing: true   # ~50% memory saving on encoder activations, ~30% slower
+
+model:
+  arch: vit_b
+  checkpoint: checkpoints/medsam_vit_b.pth
+  image_size: 1024
+
+data:
+  root: data
+  bbox_perturb_pixels: 0
+
+train:
+  batch_size: 2
+  num_workers: 2
+  epochs: 6                # decoder-only plateaued at ep 8; VPT converges faster
+  lr: 5.0e-4
+  weight_decay: 0.0
+  dice_weight: 0.5
+  amp: true
+  cooldown_seconds: 60     # pause between train and val so GPU cools — prevents val-start crash
+
+eval:
+  batch_size: 1            # match train batch_size to avoid memory spike at end-of-epoch
+  num_workers: 2
+
+output:
+  checkpoint_dir: checkpoints/runs

@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Project-specific (anchored to repo root so we don't catch src/data/)
+/data/
+/checkpoints/
+/outputs/
+wandb/
+runs/
+*.pth
+*.pt
+*.ckpt
+*.tar.gz
+*.zip
+*.tar
+*.7z
+
+# Notebooks
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Results — keep CSVs but ignore intermediate
+results/raw/
+results/scratch/
+
+# OS
+Thumbs.db
+desktop.ini
+
+# AI assistant config / artifacts — never commit
+.claude/
+.claude*
+CLAUDE.md
+**/.claude/
+.aider*
+.cursor/
+.cursorrules
+.continue/
+.copilotrc
+.windsurfrc

@@ -1,0 +1,31 @@
+# Zero-shot MedSAM evaluation — no training, just inference with bbox prompts.
+
+name: zero_shot
+method: zero_shot
+
+model:
+  arch: vit_b
+  checkpoint: checkpoints/medsam_vit_b.pth
+  image_size: 1024   # MedSAM's native eval resolution; fits in 8GB at inference
+
+data:
+  root: data    # ISIC train/val/test_{images,masks} live directly under here
+  test_sets:
+    - name: isic2018_test
+      kind: isic
+      split: test
+    # Once we have them:
+    # - name: ph2
+    #   kind: ph2
+    # - name: busi
+    #   kind: busi
+
+eval:
+  batch_size: 2   # 1024x1024 batch 2 is comfy on 8GB at inference
+  num_workers: 2
+  bbox_perturb_pixels: 0  # 0 = exact gt-derived bbox; >0 = simulate noisy prompts
+  device: cuda
+
+output:
+  results_csv: results/runs.csv
+  per_image_csv: results/raw/zero_shot_per_image.csv

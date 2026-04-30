@@ -1,0 +1,32 @@
+# Full fine-tuning: image encoder + mask decoder both trainable.
+# Memory-heavy. Plan: run on Colab T4 (or any 16+ GB GPU).
+# On 8 GB laptop, may need batch=1 + gradient accumulation; try at your own risk.
+
+name: full_ft_seed0
+method: full_ft
+seed: 0
+
+model:
+  arch: vit_b
+  checkpoint: checkpoints/medsam_vit_b.pth
+  image_size: 1024
+
+data:
+  root: data
+  bbox_perturb_pixels: 0
+
+train:
+  batch_size: 2            # may need to drop to 1 on 8GB
+  num_workers: 2
+  epochs: 10               # full FT typically wants more epochs (20+); start at 10
+  lr: 1.0e-5               # 10x lower than PEFT — full FT needs gentler updates
+  weight_decay: 1.0e-4     # mild WD to prevent encoder drift
+  dice_weight: 0.5
+  amp: true
+
+eval:
+  batch_size: 2
+  num_workers: 2
+
+output:
+  checkpoint_dir: checkpoints/runs
