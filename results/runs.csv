@@ -1,4 +1,4 @@
 run_name,method,dataset,seed,dice_mean,dice_std,iou_mean,hd95_mean,trainable_params,peak_mem_mb,wall_clock_s,timestamp,notes
-zero_shot,zero_shot,isic2018_test,0,0.9207,0.0352,0.8548,3.2879,93735472,5266,48.3,2026-04-28T22:48:11,quick
+zero_shot,zero_shot,isic2018_test,0,0.9207,0.0352,0.8548,3.2879,93735472,5266,48.3,2026-04-28T22:48:11,quick(used a smaller sub sample of test set)
 zero_shot,zero_shot,isic2018_test,0,0.9072,0.0642,0.8359,14.6065,93735472,5266,486.6,2026-04-28T22:58:54,
 decoder_only_seed0,decoder_only,isic2018_test,0,0.9487,0.0433,0.9052,5.4750,4058340,5281,521.1,2026-04-30T10:09:59,
