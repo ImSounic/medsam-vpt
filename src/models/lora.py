@@ -1,26 +1,77 @@
-"""LoRA fine-tuning for MedSAM.
+"""LoRA fine-tuning for MedSAM. Self-contained — no peft dependency.
 
-Uses the peft library to inject low-rank adapters into the SAM image
-encoder's attention qkv projections. The decoder is trained alongside
-(standard PEFT-on-SAM recipe — decoder is only ~4M params, full training
-adds expressiveness without breaking the parameter-efficiency story).
+Implements rank-r LoRA on the SAM image encoder's attention qkv projections
+by replacing each block.attn.qkv (nn.Linear) with a LoRALinear wrapper that
+adds a low-rank residual to the base linear's output.
 
-SAM's attention layer has a single fused qkv linear (Linear(768, 3*768))
-rather than separate q_proj/k_proj/v_proj. LoRA applied to this linear
-produces low-rank updates to all three projections simultaneously, which
-is a standard simplification used in SAM-LoRA literature.
+Mathematical form (Hu et al., 2021):
+    y = W·x + (alpha/r) * (B·A·x)
+    where:
+      W is the frozen base linear (768 -> 2304)
+      A is (r, 768), B is (2304, r) — both trainable
+      A initialized with Kaiming, B with zeros (so initial residual = 0
+      and the model starts identical to the frozen base)
 
-Trainable parameter budget (rank=8):
-    LoRA A: (8, 768) = 6,144 per block
-    LoRA B: (2304, 8) = 18,432 per block
-    Per block:                24,576
-    12 blocks total:         294,912 LoRA params
+Trainable param budget (rank=8 on 12 blocks):
+    Per block: 8*768 + 2304*8 = 24,576
+    LoRA total: 12 * 24,576 = 294,912
     + mask decoder:        4,058,340
-    Total trainable:      ~4,353,000  (~4.65% of MedSAM)
+    Grand total trainable: 4,353,252  (~4.65% of MedSAM)
+
+This implementation deliberately avoids the peft library. peft pulls
+transformers, which pulls tensorflow, which conflicts with numpy>=2 on
+some Linux clusters and crashes at import time.
 """
 from __future__ import annotations
 
+import math
+
+import torch
+import torch.nn as nn
 from segment_anything.modeling import Sam
+
+
+class LoRALinear(nn.Module):
+    """Wraps an nn.Linear with a trainable low-rank residual.
+
+    The wrapped (frozen) linear is kept at `self.base`. New trainable
+    parameters live at `self.lora_A` and `self.lora_B`.
+    """
+
+    def __init__(
+        self,
+        base_linear: nn.Linear,
+        rank: int = 8,
+        alpha: int = 16,
+        dropout: float = 0.0,
+    ) -> None:
+        super().__init__()
+        self.base = base_linear
+        for p in self.base.parameters():
+            p.requires_grad = False
+
+        in_features = base_linear.in_features
+        out_features = base_linear.out_features
+
+        # Use nn.Linear (no bias) for A and B so they inherit standard
+        # initialization tooling. Same memory layout as raw nn.Parameter.
+        self.lora_A = nn.Linear(in_features, rank, bias=False)
+        self.lora_B = nn.Linear(rank, out_features, bias=False)
+        self.scaling = alpha / rank
+        self.lora_dropout: nn.Module = (
+            nn.Dropout(dropout) if dropout > 0 else nn.Identity()
+        )
+
+        # Standard LoRA init: A ~ Kaiming, B ~ zeros. With B=0 the residual
+        # is exactly 0 at start, so the model behaves identically to the
+        # frozen base until training kicks in.
+        nn.init.kaiming_uniform_(self.lora_A.weight, a=math.sqrt(5))
+        nn.init.zeros_(self.lora_B.weight)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.base(x) + self.scaling * self.lora_B(
+            self.lora_A(self.lora_dropout(x))
+        )
 
 
 def apply_lora(
@@ -32,40 +83,35 @@ def apply_lora(
 ) -> None:
     """Configure SAM for LoRA fine-tuning. Modifies sam in place.
 
-    Args:
-        sam: the SAM model to configure.
-        rank: LoRA rank r. Standard value is 8.
-        alpha: LoRA scaling factor. Convention is alpha = 2*rank.
-        dropout: LoRA dropout. Keep 0 for small datasets like ISIC.
-    """
-    # Lazy import so the project runs without peft installed for non-LoRA methods.
-    from peft import LoraConfig, inject_adapter_in_model
+    - Image encoder: every block's attention.qkv replaced with LoRALinear
+      (base weights frozen, low-rank residual trainable)
+    - Prompt encoder: frozen
+    - Mask decoder: fully trainable (standard SAM-PEFT recipe)
 
+    Args:
+        sam: SAM model to configure.
+        rank: LoRA rank r. Standard value is 8.
+        alpha: LoRA scaling factor. Convention is alpha = 2 * rank.
+        dropout: LoRA-side dropout. Keep 0 for small datasets like ISIC.
+    """
     # Freeze everything to start
     for p in sam.parameters():
         p.requires_grad = False
 
-    # Inject LoRA into the encoder's attention qkv projections.
-    # target_modules=["qkv"] matches sam.image_encoder.blocks.{0..11}.attn.qkv
-    # (no qkv modules exist elsewhere in SAM, so this is unambiguous).
-    lora_config = LoraConfig(
-        r=rank,
-        lora_alpha=alpha,
-        target_modules=["qkv"],
-        lora_dropout=dropout,
-        bias="none",
-    )
-    inject_adapter_in_model(lora_config, sam.image_encoder)
+    device = next(sam.parameters()).device
 
-    # peft sets LoRA params (lora_A, lora_B) to requires_grad=True automatically.
-    # Defensively re-freeze any non-LoRA encoder params (e.g. the wrapped base
-    # qkv weights, pos_embed, layer norms, etc).
-    for name, param in sam.image_encoder.named_parameters():
-        if "lora_" not in name:
-            param.requires_grad = False
+    # Wrap each encoder block's qkv linear with a LoRALinear.
+    # SAM's attention has a single fused qkv: Linear(768, 3*768=2304) which
+    # projects to concatenated Q,K,V. We apply LoRA to this combined projection.
+    for block in sam.image_encoder.blocks:
+        block.attn.qkv = LoRALinear(
+            block.attn.qkv,
+            rank=rank,
+            alpha=alpha,
+            dropout=dropout,
+        ).to(device)
 
-    # Train mask decoder fully — standard SAM-PEFT recipe.
+    # Train mask decoder fully (decoder is small enough that full training
+    # adds useful expressiveness without breaking parameter-efficiency).
     for p in sam.mask_decoder.parameters():
         p.requires_grad = True
-
-    # Prompt encoder stays frozen (matches every other method in this project).
