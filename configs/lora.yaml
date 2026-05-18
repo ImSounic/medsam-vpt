@@ -1,0 +1,37 @@
+# LoRA fine-tuning on MedSAM image encoder + trainable mask decoder.
+# Low-rank adapters (r=8) on attention qkv layers. Encoder base weights frozen.
+
+name: lora_seed0
+method: lora
+seed: 0
+
+method_kwargs:
+  rank: 8                  # ~24K LoRA params per encoder block, 295K total
+  alpha: 16                # standard alpha = 2*rank
+  dropout: 0.0             # 0 for small datasets like ISIC
+
+model:
+  arch: vit_b
+  checkpoint: checkpoints/medsam_vit_b.pth
+  image_size: 1024
+
+data:
+  root: data
+  bbox_perturb_pixels: 0
+
+train:
+  batch_size: 1            # safe on both 8 GB laptop and 16 GB Colab T4 / A16
+  num_workers: 2
+  epochs: 6                # convergence pattern matches VPT (~6 epochs sufficient)
+  lr: 5.0e-4               # same as VPT — small param budget tolerates higher LR
+  weight_decay: 0.0
+  dice_weight: 0.5
+  amp: true
+  cooldown_seconds: 60     # defensive thermal pause; harmless on Colab/cluster
+
+eval:
+  batch_size: 1
+  num_workers: 2
+
+output:
+  checkpoint_dir: checkpoints/runs

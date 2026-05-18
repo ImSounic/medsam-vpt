@@ -10,7 +10,7 @@ Methods supported:
     vpt_shallow    — encoder frozen + VPT prompts at input + decoder
     vpt_deep       — encoder frozen + per-layer VPT prompts + decoder
     full_ft        — encoder + decoder trainable
-    lora           — (placeholder — to be added)
+    lora           — encoder frozen except LoRA adapters on attn qkv + decoder
 """
 from __future__ import annotations
 
