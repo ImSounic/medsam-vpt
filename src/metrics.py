@@ -40,11 +40,20 @@ def iou_score(pred, target, eps: float = 1e-6) -> float:
 
 
 def hd95(pred, target) -> float:
-    """95th-percentile Hausdorff distance, in pixels.
+    """95th-percentile symmetric Hausdorff distance over mask boundaries, in pixels.
 
-    Uses monai's robust implementation if available; falls back to a simple
-    scipy-based version otherwise. Returns inf if either mask is empty
-    (which we substitute with the image diagonal in aggregation).
+    Pure scipy implementation — deliberately avoids monai to keep import-time
+    dependencies minimal (monai pulls transformers→tensorflow which conflicts
+    with numpy 2.x on some clusters). Mathematically equivalent to
+    monai.metrics.utils.get_surface_distance with euclidean metric.
+
+    Algorithm:
+      1. Extract 1-pixel-thick boundaries via mask XOR (mask AND NOT eroded(mask)).
+      2. For each pred-boundary pixel, distance to nearest target-boundary pixel.
+      3. For each target-boundary pixel, distance to nearest pred-boundary pixel.
+      4. Return 95th percentile of the concatenated distances.
+
+    Returns inf if either mask is empty (substituted with finite max in aggregation).
     """
     pred = _to_numpy(pred).astype(bool)
     target = _to_numpy(target).astype(bool)
@@ -52,32 +61,30 @@ def hd95(pred, target) -> float:
     if pred.sum() == 0 or target.sum() == 0:
         return float("inf")
 
-    try:
-        # monai expects (B, C, H, W) tensors with channel dim
-        from monai.metrics.utils import get_surface_distance
+    from scipy.ndimage import binary_erosion, distance_transform_edt
 
-        # symmetric 95th-percentile
-        d1 = get_surface_distance(pred, target, distance_metric="euclidean")
-        d2 = get_surface_distance(target, pred, distance_metric="euclidean")
-        d = np.concatenate([d1, d2])
-        if len(d) == 0:
-            return 0.0
-        return float(np.percentile(d, 95))
-    except Exception:
-        # Fallback: distance transforms via scipy
-        from scipy.ndimage import distance_transform_edt
+    pred_boundary = pred & ~binary_erosion(pred)
+    target_boundary = target & ~binary_erosion(target)
 
-        # Distance from each pred boundary point to nearest target point
-        target_dt = distance_transform_edt(~target)
-        pred_dt = distance_transform_edt(~pred)
+    # Edge case: mask is a single pixel — erosion produces empty, boundary == mask
+    if pred_boundary.sum() == 0:
+        pred_boundary = pred
+    if target_boundary.sum() == 0:
+        target_boundary = target
 
-        # Boundary-only is more correct, but for a fallback we use full-mask DTs
-        d_pred_to_target = target_dt[pred]
-        d_target_to_pred = pred_dt[target]
-        d_all = np.concatenate([d_pred_to_target, d_target_to_pred])
-        if len(d_all) == 0:
-            return 0.0
-        return float(np.percentile(d_all, 95))
+    # distance_transform_edt(~M) returns, at each pixel, the distance to the
+    # nearest True pixel of M (because EDT computes distance to nearest 0,
+    # which after inversion is nearest 1 of the original).
+    dist_to_target_bd = distance_transform_edt(~target_boundary)
+    dist_to_pred_bd = distance_transform_edt(~pred_boundary)
+
+    d_pred_to_target = dist_to_target_bd[pred_boundary]
+    d_target_to_pred = dist_to_pred_bd[target_boundary]
+
+    d_all = np.concatenate([d_pred_to_target, d_target_to_pred])
+    if len(d_all) == 0:
+        return 0.0
+    return float(np.percentile(d_all, 95))
 
 
 def aggregate_metrics(per_image: list[dict]) -> dict:
