@@ -1,6 +1,6 @@
 # Full fine-tuning: image encoder + mask decoder both trainable.
-# Memory-heavy. Plan: run on Colab T4 (or any 16+ GB GPU).
-# On 8 GB laptop, may need batch=1 + gradient accumulation; try at your own risk.
+# Memory-heavy. Designed to run on A16/T4 (16 GB) at batch=1.
+# Will OOM on 8 GB laptop; do not run locally.
 
 name: full_ft_seed0
 method: full_ft
@@ -16,16 +16,17 @@ data:
   bbox_perturb_pixels: 0
 
 train:
-  batch_size: 2            # may need to drop to 1 on 8GB
+  batch_size: 1            # full FT at 1024px needs all of A16's 16 GB
   num_workers: 2
-  epochs: 10               # full FT typically wants more epochs (20+); start at 10
-  lr: 1.0e-5               # 10x lower than PEFT — full FT needs gentler updates
+  epochs: 6                # match other methods for fair comparison
+  lr: 1.0e-5               # 50x lower than PEFT — full FT needs gentler updates
   weight_decay: 1.0e-4     # mild WD to prevent encoder drift
   dice_weight: 0.5
   amp: true
+  cooldown_seconds: 60     # defensive thermal pause
 
 eval:
-  batch_size: 2
+  batch_size: 1
   num_workers: 2
 
 output:
