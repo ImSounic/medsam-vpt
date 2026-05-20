@@ -1,0 +1,25 @@
+name: busi_eval
+method: zero_shot
+
+model:
+  arch: vit_b
+  checkpoint: checkpoints/medsam_vit_b.pth
+  image_size: 1024
+
+data:
+  root: data
+  test_sets:
+    - name: busi
+      kind: busi
+      root: Dataset_BUSI_with_GT
+      classes: [benign, malignant, normal]
+
+eval:
+  batch_size: 1
+  num_workers: 2
+  bbox_perturb_pixels: 0
+  device: cuda
+
+output:
+  results_csv: results/busi_runs.csv
+  per_image_csv: results/raw/busi_per_image.csv
