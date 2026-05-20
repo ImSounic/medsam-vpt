@@ -30,7 +30,10 @@ import yaml
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from src.data.busi import BUSI
+from src.data.cbis_ddsm import CBISDDSM
 from src.data.isic import ISIC2018, isic_collate
+from src.data.ph2 import PH2
 from src.metrics import aggregate_metrics, dice_score, hd95, iou_score
 from src.models.medsam import load_medsam
 from src.models.methods import setup_method
@@ -59,15 +62,37 @@ def load_config(path: Path) -> dict:
 
 def build_dataset(cfg: dict, ts_cfg: dict, image_size: int):
     kind = ts_cfg["kind"]
+    perturb = cfg["eval"].get("bbox_perturb_pixels", 0)
     if kind == "isic":
-        # Try data/isic2018/ first, then data/ as fallback
         candidate = REPO_ROOT / cfg["data"]["root"] / "isic2018"
         root = candidate if candidate.is_dir() else REPO_ROOT / cfg["data"]["root"]
         return ISIC2018(
             root=root,
             split=ts_cfg.get("split", "test"),
             image_size=image_size,
-            bbox_perturb_pixels=cfg["eval"].get("bbox_perturb_pixels", 0),
+            bbox_perturb_pixels=perturb,
+        )
+    if kind == "ph2":
+        # Default location: data/ph2/  (can be overridden via ts_cfg["root"])
+        root = REPO_ROOT / ts_cfg.get("root", "data/ph2")
+        return PH2(root=root, image_size=image_size, bbox_perturb_pixels=perturb)
+    if kind == "busi":
+        # Default location: data/busi/  (can be overridden via ts_cfg["root"])
+        root = REPO_ROOT / ts_cfg.get("root", "data/busi")
+        return BUSI(
+            root=root,
+            image_size=image_size,
+            bbox_perturb_pixels=perturb,
+            include_normal=ts_cfg.get("include_normal", False),
+        )
+    if kind == "cbis_ddsm":
+        root = REPO_ROOT / ts_cfg.get("root", "data/cbis-ddsm")
+        return CBISDDSM(
+            root=root,
+            split=ts_cfg.get("split", "test"),
+            image_size=image_size,
+            bbox_perturb_pixels=perturb,
+            abnormality_type=ts_cfg.get("abnormality_type", "all"),
         )
     raise ValueError(f"Unknown dataset kind: {kind}")
 
