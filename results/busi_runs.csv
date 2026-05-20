@@ -1,0 +1,7 @@
+run_name,method,dataset,seed,dice_mean,dice_std,iou_mean,hd95_mean,trainable_params,peak_mem_mb,wall_clock_s,timestamp,notes
+decoder_only_seed0,decoder_only,busi,0,0.7419,0.3421,0.6759,91.1952,4058340,0,1645.2,2026-05-19T16:16:39,
+lora_seed0,lora,busi,0,0.6449,0.3396,0.5547,275.7806,4353252,0,1687.0,2026-05-19T16:45:07,
+vpt_deep_seed0,vpt_deep,busi,0,0.6632,0.3333,0.5723,263.5840,4150500,0,1598.4,2026-05-19T17:11:52,
+vpt_shallow_seed0,vpt_shallow,busi,0,0.6729,0.3305,0.5821,253.0958,4066020,0,1575.8,2026-05-19T17:38:16,
+full_ft_seed0,full_ft,busi,0,0.7459,0.3438,0.6824,37.6548,93729252,0,1564.2,2026-05-19T18:23:41,
+busi_eval,zero_shot,busi,0,0.6830,0.3201,0.5874,41.7954,0,0,1595.6,2026-05-19T18:55:30,
