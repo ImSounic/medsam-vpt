@@ -30,6 +30,7 @@ import yaml
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from src.data.busi import BUSI
 from src.data.isic import ISIC2018, isic_collate
 from src.metrics import aggregate_metrics, dice_score, hd95, iou_score
 from src.models.medsam import load_medsam
@@ -57,17 +58,37 @@ def load_config(path: Path) -> dict:
         return yaml.safe_load(f)
 
 
+def resolve_data_root(base_root: Path, maybe_path: str | None) -> Path:
+    if maybe_path is None:
+        return base_root
+    path = Path(maybe_path)
+    return path if path.is_absolute() else REPO_ROOT / path
+
+
 def build_dataset(cfg: dict, ts_cfg: dict, image_size: int):
     kind = ts_cfg["kind"]
     if kind == "isic":
         # Try data/isic2018/ first, then data/ as fallback
-        candidate = REPO_ROOT / cfg["data"]["root"] / "isic2018"
-        root = candidate if candidate.is_dir() else REPO_ROOT / cfg["data"]["root"]
+        base_root = resolve_data_root(REPO_ROOT, cfg["data"]["root"])
+        candidate = base_root / "isic2018"
+        root = candidate if candidate.is_dir() else base_root
         return ISIC2018(
             root=root,
             split=ts_cfg.get("split", "test"),
             image_size=image_size,
             bbox_perturb_pixels=cfg["eval"].get("bbox_perturb_pixels", 0),
+        )
+    if kind == "busi":
+        root = resolve_data_root(
+            REPO_ROOT,
+            ts_cfg.get("root", cfg.get("data", {}).get("root")),
+        )
+        classes = tuple(ts_cfg.get("classes", ["benign", "malignant", "normal"]))
+        return BUSI(
+            root=root,
+            image_size=image_size,
+            bbox_perturb_pixels=cfg["eval"].get("bbox_perturb_pixels", 0),
+            classes=classes,
         )
     raise ValueError(f"Unknown dataset kind: {kind}")
 
