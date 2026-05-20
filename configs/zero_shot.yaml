@@ -14,16 +14,22 @@ data:
     - name: isic2018_test
       kind: isic
       split: test
-    # Once we have them:
-    # - name: ph2
-    #   kind: ph2
-    # - name: busi
-    #   kind: busi
+    - name: ph2
+      kind: ph2
+      root: data/ph2            # near-OOD: same modality (dermoscopy), different site/cameras
+    - name: busi
+      kind: busi
+      root: data/busi           # far-OOD: ultrasound (different acoustic modality)
+    - name: cbis_ddsm
+      kind: cbis_ddsm
+      root: data/cbis-ddsm      # far-OOD: mammography (X-ray) — test split only
+      split: test
+      abnormality_type: all     # use both mass and calc cases
 
 eval:
-  batch_size: 2   # 1024x1024 batch 2 is comfy on 8GB at inference
-  num_workers: 2
-  bbox_perturb_pixels: 0  # 0 = exact gt-derived bbox; >0 = simulate noisy prompts
+  batch_size: 1            # CBIS-DDSM mammograms are ~72 MB raw; batch 1 is safest
+  num_workers: 0           # avoid Windows worker-process OOM crashes on big TIFFs
+  bbox_perturb_pixels: 0   # 0 = exact gt-derived bbox; >0 = simulate noisy prompts
   device: cuda
 
 output:
