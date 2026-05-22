@@ -104,17 +104,22 @@ def build_dataset(cfg: dict, ts_cfg: dict, image_size: int):
 
 
 @torch.no_grad()
-def predict_batch(sam, images: torch.Tensor, bboxes: torch.Tensor) -> torch.Tensor:
-    """Method-agnostic forward. Works for zero-shot or any trained method —
-    sam.image_encoder is whatever wrapper was applied at setup time.
+def predict_from_embeddings(
+    sam,
+    image_embeddings: torch.Tensor,
+    bboxes: torch.Tensor,
+    H: int,
+    W: int,
+) -> torch.Tensor:
+    """Run prompt encoder + mask decoder over precomputed image embeddings.
 
+    Useful when multiple methods share the same encoder (e.g. zero_shot and
+    decoder_only both use the unmodified base MedSAM encoder) — compute the
+    expensive encoder forward once, run cheap decoders on the same embeddings.
     Returns (B, H, W) uint8 mask predictions.
     """
-    H, W = images.shape[-2:]
-    image_embeddings = sam.image_encoder(images)  # (B, 256, H/16, W/16)
-
     masks_out = []
-    for i in range(images.shape[0]):
+    for i in range(image_embeddings.shape[0]):
         sparse_embed, dense_embed = sam.prompt_encoder(
             points=None,
             boxes=bboxes[i : i + 1],
@@ -132,6 +137,18 @@ def predict_batch(sam, images: torch.Tensor, bboxes: torch.Tensor) -> torch.Tens
         )
         masks_out.append((mask > 0).to(torch.uint8).squeeze(0).squeeze(0))
     return torch.stack(masks_out, dim=0)
+
+
+@torch.no_grad()
+def predict_batch(sam, images: torch.Tensor, bboxes: torch.Tensor) -> torch.Tensor:
+    """Method-agnostic forward. Works for zero-shot or any trained method —
+    sam.image_encoder is whatever wrapper was applied at setup time.
+
+    Returns (B, H, W) uint8 mask predictions.
+    """
+    H, W = images.shape[-2:]
+    image_embeddings = sam.image_encoder(images)  # (B, 256, H/16, W/16)
+    return predict_from_embeddings(sam, image_embeddings, bboxes, H, W)
 
 
 def evaluate(cfg: dict, args: argparse.Namespace) -> int:

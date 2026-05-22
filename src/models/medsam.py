@@ -55,6 +55,34 @@ def load_medsam(
     return sam
 
 
+def load_medsam_from_state_dict(
+    state_dict: dict,
+    arch: str = "vit_b",
+    device: str | torch.device | None = None,
+) -> Sam:
+    """Build a SAM ViT-B with an already-loaded state dict (no disk I/O).
+
+    Use this when you want to instantiate multiple SAMs from the same base
+    weights without re-reading the 358 MB .pth file each time. Typical
+    pattern:
+
+        base_sd = torch.load("checkpoints/medsam_vit_b.pth", map_location="cpu")
+        sam_a = load_medsam_from_state_dict(base_sd, device="cuda")
+        sam_b = load_medsam_from_state_dict(base_sd, device="cuda")
+    """
+    if device is None:
+        from src.device_utils import get_device
+        device = get_device()
+
+    sam: Sam = sam_model_registry[arch](checkpoint=None)
+    # Some MedSAM dumps wrap the actual weights under a top-level "model" key
+    sd = state_dict["model"] if isinstance(state_dict.get("model"), dict) else state_dict
+    sam.load_state_dict(sd, strict=False)
+    sam = sam.to(device)
+    sam.eval()
+    return sam
+
+
 def count_parameters(model: torch.nn.Module) -> dict[str, int]:
     """Count total and trainable parameters."""
     total = sum(p.numel() for p in model.parameters())
