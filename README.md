@@ -6,10 +6,11 @@ We compare six adaptation strategies for the **MedSAM** foundation model on
 skin lesion segmentation, evaluating both in-distribution performance and
 robustness under increasing distribution shift. The headline finding:
 **parameter-efficient methods that aggressively modify the encoder (LoRA,
-VPT) win in-distribution but lose dramatically under modality shift —
-even falling below zero-shot performance.** Methods that leave the
-encoder mostly intact (Decoder-only FT, Full FT with gentle LR) sacrifice
-a fraction of a Dice point on ID to retain robustness across the drift ladder.
+VPT) win in-distribution but collapse under extreme modality shift —
+falling below zero-shot performance on mammography (CBIS-DDSM).** Methods
+that leave the encoder mostly intact (Decoder-only FT, Full FT with gentle
+LR) sacrifice a fraction of a Dice point on ID to retain robustness across
+the drift ladder.
 
 ---
 
@@ -17,21 +18,27 @@ a fraction of a Dice point on ID to retain robustness across the drift ladder.
 
 ![Rank reversal across the drift ladder](results/figures/7_rank_reversal.png)
 
-| Method | Trainable | ISIC (ID) Dice | PH² (near-OOD) Dice | BUSI (far-OOD) Dice |
-|---|---:|---:|---:|---:|
-| Zero-shot | 0 | 0.9072 | 0.9054 | 0.6830 |
-| Decoder-only FT | 4.06 M | 0.9487 | 0.9466 | **0.7419** |
-| VPT-shallow | 4.07 M | 0.9457 | 0.9436 | 0.6729 |
-| VPT-deep | 4.15 M | 0.9472 | 0.9458 | 0.6632 |
-| LoRA (r=8) | 4.35 M | 0.9545 | 0.9557 | 0.6449 |
-| **Full FT** | 93.73 M | **0.9609** | **0.9583** | **0.7459** |
+| Method | Trainable | ISIC (ID) Dice | PH² (near-OOD) Dice | BUSI (far-OOD: ultrasound) | CBIS-DDSM (far-OOD: mammography) |
+|---|---:|---:|---:|---:|---:|
+| Zero-shot | 0 | 0.9072 | 0.9054 | 0.8234 | 0.6924 |
+| Decoder-only FT | 4.06 M | 0.9487 | 0.9466 | 0.8944 | **0.8273** |
+| VPT-shallow | 4.07 M | 0.9457 | 0.9436 | 0.8112 | 0.6388 |
+| VPT-deep | 4.15 M | 0.9472 | 0.9458 | 0.7995 | 0.5744 |
+| LoRA (r=8) | 4.35 M | 0.9545 | 0.9557 | 0.7775 | **0.4979** |
+| **Full FT** | 93.73 M | **0.9609** | **0.9583** | **0.8991** | **0.8280** |
 
-**On ISIC:** Full FT > LoRA > Decoder-only ≈ VPT-deep ≈ VPT-shallow > Zero-shot.
-**On BUSI:** Full FT ≈ Decoder-only > Zero-shot > VPT-shallow > VPT-deep > LoRA.
+**On ISIC (ID):** Full FT > LoRA > Decoder-only ≈ VPT-deep ≈ VPT-shallow > Zero-shot.
+**On BUSI (ultrasound):** Full FT ≈ Decoder-only > Zero-shot > VPT-shallow > VPT-deep > LoRA.
+**On CBIS-DDSM (mammography):** Full FT ≈ Decoder-only > **Zero-shot** > VPT-shallow > VPT-deep > LoRA.
 
-LoRA goes from second-best on ID to **worst** on far-OOD (worse than
-doing nothing). The full discussion is in `report/`; the explanation
-boils down to *where* and *how aggressively* each method adapts the encoder.
+The rank reversal is most dramatic on CBIS-DDSM mammography — the most
+extreme modality shift in our drift ladder (visible-light dermoscopy →
+X-ray). All three encoder-modifying methods (LoRA, VPT-deep, VPT-shallow)
+fall **below zero-shot** performance there, with LoRA collapsing from
+second-best on ID (0.9545) to worst overall (0.4979 — half of zero-shot).
+On the milder ultrasound shift (BUSI), the same ordering holds but no
+method falls below zero-shot. The explanation boils down to *where* and
+*how aggressively* each method adapts the encoder.
 
 See `results/figures/` for all eight plots and `results/summary_table.csv`
 for the complete numeric table.
@@ -77,11 +84,15 @@ Implementation notes:
 | ISIC 2018 Task 1 | Train + ID test | 2,594 / 1,000 | Dermoscopy (RGB) | None |
 | PH² | Near-OOD test | 200 | Dermoscopy (RGB) | Acquisition (different hospital, camera, cohort) |
 | BUSI | Far-OOD test | 647 (487 benign + 210 malignant) | Breast ultrasound (greyscale) | Modality |
+| CBIS-DDSM | Far-OOD test | 362 (test split, mass + calcification) | Mammography (X-ray) | Modality (most extreme) |
 
 ISIC is downloaded from the ISIC Challenge archive. PH² is downloaded from
 Kaggle (`athina123/ph2dataset`) — the original ADDI FTP is unreliable.
-BUSI is from the Kaggle mirror (`aryashah2k/breast-ultrasound-images-dataset`)
-of the Cairo University release (Al-Dhabyani et al. 2020).
+BUSI is from the Kaggle mirror (`sabahesaraki/breast-ultrasound-images-dataset`)
+of the Cairo University release (Al-Dhabyani et al. 2020). CBIS-DDSM is
+from Kaggle (`awsaf49/cbis-ddsm-breast-cancer-image-dataset`), the Curated
+Breast Imaging Subset of DDSM (Lee et al. 2017). Loader filters to the
+official test split via PatientID and OR-s multi-lesion masks together.
 
 ---
 
