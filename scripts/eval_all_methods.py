@@ -38,23 +38,31 @@ from __future__ import annotations
 
 import argparse
 import csv
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
 
-import torch
-import yaml
-from torch.utils.data import DataLoader
-from tqdm import tqdm
+# Make the repo root importable so `from src...` works when this script is
+# run directly (i.e. `python scripts/eval_all_methods.py`). Python only
+# auto-adds the script's directory to sys.path, not the project root.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
-from src.data.isic import isic_collate
-from src.device_utils import device_name, get_device, peak_memory_mb, reset_peak_memory
-from src.eval import build_dataset, predict_from_embeddings
-from src.metrics import aggregate_metrics, dice_score, hd95, iou_score
-from src.models.medsam import load_medsam_from_state_dict
-from src.models.methods import setup_method
+import torch  # noqa: E402
+import yaml  # noqa: E402
+from torch.utils.data import DataLoader  # noqa: E402
+from tqdm import tqdm  # noqa: E402
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+from src.data.isic import isic_collate  # noqa: E402
+from src.device_utils import device_name, get_device, peak_memory_mb, reset_peak_memory  # noqa: E402
+from src.eval import build_dataset, predict_from_embeddings  # noqa: E402
+from src.metrics import aggregate_metrics, dice_score, hd95, iou_score  # noqa: E402
+from src.models.medsam import load_medsam_from_state_dict  # noqa: E402
+from src.models.methods import setup_method  # noqa: E402
+
+REPO_ROOT = _REPO_ROOT
 
 
 # ----------------------------------------------------------------------------
