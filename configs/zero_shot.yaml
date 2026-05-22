@@ -27,8 +27,8 @@ data:
       abnormality_type: all     # use both mass and calc cases
 
 eval:
-  batch_size: 1            # CBIS-DDSM mammograms are ~72 MB raw; batch 1 is safest
-  num_workers: 0           # avoid Windows worker-process OOM crashes on big TIFFs
+  batch_size: 4            # A10 has plenty of headroom
+  num_workers: 4           # Linux, parallel loader workers OK
   bbox_perturb_pixels: 0   # 0 = exact gt-derived bbox; >0 = simulate noisy prompts
   device: cuda
 
