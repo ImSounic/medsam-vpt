@@ -63,6 +63,8 @@ from src.models.methods import setup_method  # noqa: E402
 
 PERTURB_LEVELS_DEFAULT = [20, 50, 100, 200]
 N_SAMPLES_DEFAULT = 5
+# Default output directory; can be overridden at runtime via --out-dir in main().
+# Treated as a module-level mutable so save_per_image_csv() etc. see the same value.
 OUT_DIR = REPO_ROOT / "bbox_robustness" / "results"
 
 
@@ -91,6 +93,14 @@ def parse_args() -> argparse.Namespace:
         help="Smoke-test mode: use only the first 8 images per dataset.",
     )
     p.add_argument("--device", default=None, help="cuda | mps | cpu (default: auto)")
+    p.add_argument(
+        "--out-dir",
+        type=Path, default=None,
+        help="Override the output directory (runs.csv + per_image/*.csv). "
+             "Useful when evaluating a separate set of checkpoints (e.g. pm=20 "
+             "trained) without clobbering the baseline results. "
+             "Defaults to bbox_robustness/results/.",
+    )
     return p.parse_args()
 
 
@@ -383,6 +393,13 @@ def main() -> int:
     )
     print(f"[bbox-robust] perturb levels (max px per side): {args.perturb_levels}")
     print(f"[bbox-robust] samples per image per level: {args.n_samples}")
+
+    # Apply --out-dir override (if any) before any save_per_image_csv calls.
+    # Save+restore via the module-level global so helpers see the same path.
+    global OUT_DIR
+    if args.out_dir is not None:
+        OUT_DIR = args.out_dir if args.out_dir.is_absolute() else REPO_ROOT / args.out_dir
+    print(f"[bbox-robust] output dir: {OUT_DIR}")
 
     # Load base MedSAM weights ONCE into CPU memory
     base_ckpt_path = REPO_ROOT / cfg["model"]["checkpoint"]

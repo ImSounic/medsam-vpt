@@ -74,6 +74,13 @@ def parse_args() -> argparse.Namespace:
         help="Run on first 8 images per dataset — smoke-test mode.",
     )
     p.add_argument("--device", default=None, help="cuda | mps | cpu (default: auto)")
+    p.add_argument(
+        "--out-csv",
+        type=Path, default=None,
+        help="Override the results CSV path. Useful when evaluating a separate set of "
+             "checkpoints (e.g. pm=20 trained) without clobbering the baseline CSV. "
+             "Defaults to whatever the config's output.results_csv specifies.",
+    )
     return p.parse_args()
 
 
@@ -456,7 +463,12 @@ def main() -> int:
         ))
 
     # Write all rows at the end (single append, ordered by group)
-    runs_path = REPO_ROOT / cfg["output"]["results_csv"]
+    # --out-csv overrides the config's results_csv when set. Useful for keeping
+    # pm=0 and pm=20 baselines in separate files.
+    if args.out_csv is not None:
+        runs_path = args.out_csv if args.out_csv.is_absolute() else REPO_ROOT / args.out_csv
+    else:
+        runs_path = REPO_ROOT / cfg["output"]["results_csv"]
     append_to_runs_csv(all_rows, runs_path)
 
     total_min = (time.time() - t_wall) / 60
