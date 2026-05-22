@@ -87,21 +87,22 @@ bbox_robustness/results/
     ├── degradation_curves.png              # 4 panels (one per dataset), dice vs perturb
     ├── degradation_heatmap.png             # method × perturb, faceted by dataset
     ├── relative_drop.png                   # % drop from 0-px baseline at pm=200
-    └── qualitative/                        # per (method, dataset, level) prediction examples
-        ├── lora__cbis_ddsm__pm20.png
-        ├── lora__cbis_ddsm__pm50.png
-        ├── lora__cbis_ddsm__pm100.png
-        ├── lora__cbis_ddsm__pm200.png
-        └── ...                             # 6 methods × 4 datasets × 4 levels = 96 PNGs
+    └── qualitative/                        # per (method, dataset, sample image) figures
+        ├── lora__cbis_ddsm__Mass-Test_P_00016_LEFT_CC.png
+        ├── lora__cbis_ddsm__Mass-Test_P_00020_LEFT_MLO.png
+        ├── ...                             # 6 methods × 4 datasets × N images
 ```
 
-Each qualitative PNG has the same 4-column format as `results/figures/qualitative/`:
+Each qualitative PNG shows ONE image's degradation across all four perturbation levels — same image throughout, with one row per perturb level so you can directly compare how the prediction collapses:
 
-| Col 0 | Col 1 | Col 2 | Col 3 |
-|---|---|---|---|
-| Input + bbox (cyan = perturbed, yellow dashed = tight reference) | Ground truth overlay (green) | Prediction overlay (red) with Dice/IoU | TP green / FP red / FN blue |
+| | Col 0 | Col 1 | Col 2 | Col 3 |
+|---|---|---|---|---|
+| Row 0 (0–20 px) | Input + bbox (cyan = perturbed, yellow dashed = tight reference) | Ground truth overlay (green) | Prediction overlay (red) with Dice/IoU | TP green / FP red / FN blue |
+| Row 1 (0–50 px) | …same image, looser bbox… | …same GT… | …prediction at this level… | …diff at this level… |
+| Row 2 (0–100 px) | … | … | … | … |
+| Row 3 (0–200 px) | … | … | … | … |
 
-…with one row per sample image (default N=4). Flip between `__pm20.png` and `__pm200.png` for the same method+dataset to see how predictions degrade with prompt imprecision.
+This makes it visually obvious which methods hold up vs collapse as the bbox becomes less precise on the *same* underlying image.
 
 ## runs.csv schema
 

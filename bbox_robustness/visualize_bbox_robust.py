@@ -1,32 +1,44 @@
 """Qualitative bbox-robustness visualizations.
 
-Same 4-column format as results/figures/qualitative/ (input+bbox, ground
-truth, prediction, TP/FP/FN diff) — but generates one figure per
-(method, dataset, perturb_level) so you can flip between e.g.
-lora__cbis_ddsm__pm20.png and lora__cbis_ddsm__pm200.png to see how
-predictions collapse as the prompt becomes sloppier.
+Per (method, dataset, sample_image) figure showing the SAME image's
+degradation across perturbation levels — one row per level, same four
+columns as results/figures/qualitative/:
 
-The bbox used for inference and shown in column 0 is one deterministic
-sample (sample_idx=0) drawn with the same RNG seed scheme as
-eval_bbox_robust.py — so what you see is a representative example of
-what was scored.
+    Col 0: input + bbox (cyan = perturbed bbox, yellow dashed = tight ref)
+    Col 1: ground-truth mask overlay (green)
+    Col 2: prediction overlay (red) with Dice / IoU annotation
+    Col 3: TP green / FP red / FN blue breakdown
+
+Rows (top → bottom): perturb_max = 20, 50, 100, 200 px (by default).
+
+For each row, the bbox is one deterministic sample (sample_idx=0) drawn
+with the same RNG seed scheme as eval_bbox_robust.py — so what you see
+is a representative example of what was scored. The image encoder runs
+once and is reused across all four rows (only the prompt+decoder
+re-runs), so a single figure costs 1 encoder pass + 4 decoder calls.
+
+Output: bbox_robustness/results/figures/qualitative/<method>__<dataset>__<image_id>.png
 
 Usage:
-    # All methods × all datasets × all default perturb levels
+    # Default: all methods × all datasets × first 4 images each
     python bbox_robustness/visualize_bbox_robust.py
 
     # Subset
     python bbox_robustness/visualize_bbox_robust.py --method lora full_ft \\
-        --dataset cbis_ddsm --perturb-levels 20 200
+        --dataset cbis_ddsm --n 3
 
-    # Pick samples by per-image Dice quality (best/mid/worst), needs the
-    # per_image CSVs that eval_bbox_robust.py writes
+    # Pick best/middle/worst examples by per-image Dice (needs the
+    # per_image CSVs that eval_bbox_robust.py writes)
     python bbox_robustness/visualize_bbox_robust.py --strategy spread
+
+    # Custom perturbation grid
+    python bbox_robustness/visualize_bbox_robust.py --perturb-levels 10 50 150
 """
 from __future__ import annotations
 
 import argparse
 import csv
+import re
 import sys
 from pathlib import Path
 
@@ -89,12 +101,16 @@ def pick_indices_first(dataset, n: int) -> list[int]:
     return list(range(min(n, len(dataset))))
 
 
-def pick_indices_spread(run_name: str, ds_csv_name: str, perturb_max: int,
-                         dataset, n: int) -> list[int]:
-    """Pick indices spanning the dice distribution at this perturb level.
+def pick_indices_spread(
+    run_name: str, ds_csv_name: str, perturb_max: int, dataset, n: int,
+) -> list[int]:
+    """Pick indices spanning the per-image Dice distribution at this perturb level.
 
-    Uses bbox_robustness/results/per_image/{run_name}_{ds}_pm{N}.csv if present.
-    Falls back to first-N if the file isn't available.
+    Reads bbox_robustness/results/per_image/{run}_{ds}_pm{N}.csv. Falls back
+    to first-N if the file isn't there yet.
+
+    We use the LARGEST configured perturb level for ranking — that's where
+    methods differ most, giving the most informative spread of examples.
     """
     csv_path = PER_IMAGE_DIR / f"{run_name}_{ds_csv_name}_pm{perturb_max}.csv"
     if not csv_path.exists():
@@ -120,8 +136,7 @@ def pick_indices_spread(run_name: str, ds_csv_name: str, perturb_max: int,
 
 
 # ----------------------------------------------------------------------------
-# Rendering helpers (mirrored from scripts/visualize_predictions.py for
-# consistency — same colour palette, same overlay style)
+# Rendering helpers (mirrored from scripts/visualize_predictions.py)
 # ----------------------------------------------------------------------------
 def denormalize_image(img_tensor: torch.Tensor) -> np.ndarray:
     arr = img_tensor.cpu().clone() * PIXEL_STD + PIXEL_MEAN
@@ -156,82 +171,104 @@ def dice_iou(pred: np.ndarray, gt: np.ndarray) -> tuple:
     return dice, iou
 
 
+def safe_filename(s: str) -> str:
+    """Strip characters that are awkward in filenames (spaces, parens, slashes).
+
+    Keep alphanumerics, dashes, underscores; collapse runs of replacement chars.
+    """
+    cleaned = re.sub(r"[^A-Za-z0-9_-]+", "_", s)
+    return cleaned.strip("_")
+
+
 # ----------------------------------------------------------------------------
-# Per (method, dataset, perturb_level) figure
+# Single-image figure: rows = perturb levels, columns = [input+bbox, gt, pred, diff]
 # ----------------------------------------------------------------------------
 @torch.no_grad()
-def render_figure(
-    sam, method_label: str, dataset_name: str, dataset,
-    perturb_max: int, sample_idxs: list, device: str, out_path: Path,
+def render_image_degradation(
+    sam, method_label: str, dataset_name: str, item: dict,
+    perturb_levels: list, device: str, out_path: Path,
 ) -> None:
+    """One image, all perturb levels stacked vertically.
+
+    Each row shows the same image with a different perturbed bbox; the
+    image embedding is computed once and reused (only the prompt+decoder
+    re-runs per row).
+    """
+    img_rgb = denormalize_image(item["image"])
+    gt = item["mask"].numpy().astype(bool)
+    tight_bbox = item["bbox"].numpy()
+    img_id = item["image_id"]
+
+    # Image encoder once — reused across all perturb levels (same image)
+    images_t = item["image"].unsqueeze(0).to(device)
+    embedding = sam.image_encoder(images_t)  # (1, 256, 64, 64)
+
     fig, axes = plt.subplots(
-        len(sample_idxs), 4,
-        figsize=(20, 5 * len(sample_idxs)),
+        len(perturb_levels), 4,
+        figsize=(20, 5 * len(perturb_levels)),
         squeeze=False,
     )
-    for row, idx in enumerate(sample_idxs):
-        item = dataset[idx]
-        img_rgb = denormalize_image(item["image"])
-        gt = item["mask"].numpy().astype(bool)
-        tight_bbox = item["bbox"].numpy()
-        img_id = item["image_id"]
 
-        # Pick the same "sample_idx=0" perturbed bbox the eval saw first
-        rng = make_rng(img_id, perturb_max, sample_idx=0)
-        perturbed = expand_bbox(tight_bbox, perturb_max, IMAGE_SIZE, rng)
+    for row, pm in enumerate(perturb_levels):
+        # Deterministic perturbed bbox for this image at this level
+        rng = make_rng(img_id, pm, sample_idx=0)
+        perturbed = expand_bbox(tight_bbox, pm, IMAGE_SIZE, rng)
 
-        # Inference with the perturbed bbox
-        images_t = item["image"].unsqueeze(0).to(device)
         boxes_t = torch.from_numpy(perturbed).unsqueeze(0).to(device).float()  # (1, 4)
-        embedding = sam.image_encoder(images_t)  # (1, 256, 64, 64)
         pred_t = decode_image_with_prompts(
-            sam, embedding, boxes_t, IMAGE_SIZE, IMAGE_SIZE
+            sam, embedding, boxes_t, IMAGE_SIZE, IMAGE_SIZE,
         )  # (1, H, W) uint8
         pred = pred_t.squeeze(0).cpu().numpy().astype(bool)
-
         dice, iou = dice_iou(pred, gt)
 
-        # Column 0: input + perturbed bbox in cyan; tight bbox in dim yellow for ref
+        # --- Col 0: input + bboxes -----------------------------------------
         ax = axes[row, 0]
         ax.imshow(img_rgb)
+        # Tight (reference) box in yellow dashed
         x1t, y1t, x2t, y2t = tight_bbox
         ax.add_patch(plt.Rectangle(
             (x1t, y1t), x2t - x1t, y2t - y1t,
             fill=False, edgecolor="yellow", linewidth=1.2,
             linestyle="--", alpha=0.7,
         ))
+        # Perturbed (used) box in cyan
         x1, y1, x2, y2 = perturbed
         ax.add_patch(plt.Rectangle(
             (x1, y1), x2 - x1, y2 - y1,
             fill=False, edgecolor="cyan", linewidth=2.0,
         ))
         ax.set_title(
-            f"Input + bbox (cyan = perturbed, yellow dash = tight)\n"
-            f"ID: {img_id}  |  perturb_max = {perturb_max} px",
-            fontsize=10,
+            f"Input + bbox (perturb_max = 0–{pm} px per side)",
+            fontsize=11, fontweight="bold",
         )
-        ax.axis("off")
+        # Y-axis label as the perturb level — visible on the leftmost panel
+        ax.set_ylabel(f"0–{pm} px", fontsize=12, fontweight="bold", rotation=0,
+                      labelpad=40, va="center")
+        ax.set_xticks([]); ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_visible(False)
 
-        # Column 1: ground truth overlay
+        # --- Col 1: ground truth -------------------------------------------
         axes[row, 1].imshow(overlay_mask(img_rgb, gt, (0, 200, 0)))
-        axes[row, 1].set_title("Ground truth (green)", fontsize=10)
+        axes[row, 1].set_title("Ground truth (green)", fontsize=11)
         axes[row, 1].axis("off")
 
-        # Column 2: prediction overlay
+        # --- Col 2: prediction ---------------------------------------------
         axes[row, 2].imshow(overlay_mask(img_rgb, pred, (220, 30, 30)))
         axes[row, 2].set_title(
-            f"Prediction (red)\nDice = {dice:.3f}, IoU = {iou:.3f}",
-            fontsize=10,
+            f"Prediction (red)  |  Dice = {dice:.3f}, IoU = {iou:.3f}",
+            fontsize=11,
         )
         axes[row, 2].axis("off")
 
-        # Column 3: TP/FP/FN diff
+        # --- Col 3: error breakdown ----------------------------------------
         axes[row, 3].imshow(error_breakdown(img_rgb, pred, gt))
-        axes[row, 3].set_title("TP green / FP red / FN blue", fontsize=10)
+        axes[row, 3].set_title("TP green / FP red / FN blue", fontsize=11)
         axes[row, 3].axis("off")
 
     fig.suptitle(
-        f"{method_label} on {dataset_name}  —  bbox max-expansion {perturb_max} px",
+        f"{method_label}  ·  {dataset_name}  ·  image {img_id}\n"
+        f"Degradation across bbox imprecision (top → bottom: looser bbox)",
         fontsize=14, fontweight="bold",
     )
     plt.tight_layout()
@@ -256,15 +293,17 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--perturb-levels", type=int, nargs="+",
         default=PERTURB_LEVELS_DEFAULT,
+        help=f"Perturbation levels as rows in the figure (default: {PERTURB_LEVELS_DEFAULT}).",
     )
     p.add_argument(
         "--n", type=int, default=4,
-        help="Sample images per (method, dataset, level) figure.",
+        help="Number of sample IMAGES per (method, dataset). Each gets its own figure.",
     )
     p.add_argument(
         "--strategy", choices=["first", "spread"], default="first",
         help="Sample selection: 'first' = first N dataset items, "
-             "'spread' = best/mid/worst by per-image Dice (needs per_image CSVs).",
+             "'spread' = best/mid/worst by per-image Dice at the LARGEST perturb level "
+             "(needs per_image CSVs from eval_bbox_robust.py).",
     )
     p.add_argument("--device", default=None)
     return p.parse_args()
@@ -274,8 +313,10 @@ def main() -> int:
     args = parse_args()
     device = get_device(prefer=args.device)
     print(f"[viz] device={device} ({device_name(device)})")
+    print(f"[viz] perturb levels per figure (rows): {args.perturb_levels}")
+    print(f"[viz] sample images per (method, dataset): {args.n}")
 
-    # Pre-build datasets once
+    # Build datasets once
     datasets: dict = {}
     for ds_name in args.dataset:
         try:
@@ -289,18 +330,19 @@ def main() -> int:
     if "model" in base_sd and isinstance(base_sd["model"], dict):
         base_sd = base_sd["model"]
 
+    largest_pm = max(args.perturb_levels)
+
     for method_name in args.method:
         method_cfg = METHODS[method_name]
         label = method_cfg["label"]
 
-        # Skip if checkpoint is missing
         if method_cfg["checkpoint"]:
             ckpt_path = REPO_ROOT / method_cfg["checkpoint"]
             if not ckpt_path.exists():
                 print(f"[viz] skipping {method_name}: {ckpt_path} not found")
                 continue
 
-        # Build SAM once per method, reuse across datasets and levels
+        # SAM once per method (re-applies wrapper + weights), reused across datasets
         sam = load_medsam_from_state_dict(base_sd, device=device)
         method_kwargs: dict = {}
         if method_cfg["checkpoint"]:
@@ -317,26 +359,25 @@ def main() -> int:
         sam.eval()
 
         for ds_name, ds in datasets.items():
-            for pm in args.perturb_levels:
-                # Per (method, dataset, perturb_level) — sample selection can
-                # depend on the perturb level when using 'spread' strategy
-                run_name = (f"{method_name}_seed0"
-                            if method_name != "zero_shot" else "zero_shot")
-                ds_csv_name = DATASET_TO_CSV_NAME[ds_name]
-                if args.strategy == "spread":
-                    idxs = pick_indices_spread(
-                        run_name, ds_csv_name, pm, ds, args.n,
-                    )
-                else:
-                    idxs = pick_indices_first(ds, args.n)
-                if not idxs:
-                    continue
+            run_name = (f"{method_name}_seed0"
+                        if method_name != "zero_shot" else "zero_shot")
+            ds_csv_name = DATASET_TO_CSV_NAME[ds_name]
+            if args.strategy == "spread":
+                idxs = pick_indices_spread(
+                    run_name, ds_csv_name, largest_pm, ds, args.n,
+                )
+            else:
+                idxs = pick_indices_first(ds, args.n)
 
-                out_path = FIG_DIR / f"{method_name}__{ds_name}__pm{pm}.png"
-                print(f"[viz] {label} × {ds_name} × pm={pm} -> {out_path.name}")
+            for idx in idxs:
+                item = ds[idx]
+                img_id_safe = safe_filename(item["image_id"])
+                out_path = FIG_DIR / f"{method_name}__{ds_name}__{img_id_safe}.png"
+                print(f"[viz] {label} × {ds_name} × {item['image_id']} -> {out_path.name}")
                 try:
-                    render_figure(
-                        sam, label, ds_name, ds, pm, idxs, device, out_path,
+                    render_image_degradation(
+                        sam, label, ds_name, item,
+                        args.perturb_levels, device, out_path,
                     )
                 except Exception as e:
                     print(f"  [viz] failed: {e}")
