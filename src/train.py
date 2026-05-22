@@ -27,12 +27,28 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.data.isic import ISIC2018, isic_collate
+from src.device_utils import (
+    autocast_device_type,
+    device_name,
+    empty_cache,
+    get_device,
+    peak_memory_mb,
+    reset_peak_memory,
+    seed_all,
+    supports_amp,
+    supports_pin_memory,
+    synchronize,
+)
 from src.losses import DiceBCELoss
 from src.metrics import aggregate_metrics, dice_score, iou_score
 from src.models.medsam import load_medsam
 from src.models.methods import encoder_in_grad_path, setup_method
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# Set by main() once the device is picked. Used by train_one_epoch/validate
+# as the device_type kwarg to torch.autocast (required even when disabled).
+_AUTOCAST_DEVICE = "cuda"
 
 
 def parse_args() -> argparse.Namespace:
@@ -55,9 +71,7 @@ def load_config(path: Path) -> dict:
 def set_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+    seed_all(seed)  # handles torch + cuda + mps
 
 
 def forward_with_prompt(
@@ -106,7 +120,7 @@ def train_one_epoch(
         bboxes = batch["bbox"].to(device, non_blocking=True)
 
         optimizer.zero_grad(set_to_none=True)
-        with torch.autocast(device_type="cuda", enabled=amp):
+        with torch.autocast(device_type=_AUTOCAST_DEVICE, enabled=amp):
             logits = forward_with_prompt(sam, images, bboxes, encoder_grad=encoder_grad)
             loss, parts = criterion(logits, masks)
 
@@ -140,7 +154,7 @@ def validate(sam, loader, device, *, amp: bool) -> dict:
         images = batch["image"].to(device, non_blocking=True)
         bboxes = batch["bbox"].to(device, non_blocking=True)
         masks_gt = batch["mask"].cpu().numpy()
-        with torch.autocast(device_type="cuda", enabled=amp):
+        with torch.autocast(device_type=_AUTOCAST_DEVICE, enabled=amp):
             logits = forward_with_prompt(sam, images, bboxes, encoder_grad=False)
         preds = (logits.squeeze(1) > 0).cpu().numpy().astype("uint8")
         for j in range(preds.shape[0]):
@@ -192,11 +206,15 @@ def main() -> int:
     seed = args.seed if args.seed is not None else cfg.get("seed", 0)
     set_seed(seed)
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = get_device()  # auto: cuda > mps > cpu
     method = cfg["method"]
-    print(f"[train] device={device} method={method} seed={seed}")
-    if device == "cuda":
-        print(f"[train] gpu={torch.cuda.get_device_name(0)}")
+    print(f"[train] device={device} ({device_name(device)}) method={method} seed={seed}")
+
+    # Autocast device_type kwarg is required even when enabled=False, so we
+    # bind it once here and reference the module-level constant from inside
+    # train_one_epoch / validate (which already exist as module-level fns).
+    global _AUTOCAST_DEVICE
+    _AUTOCAST_DEVICE = autocast_device_type(device)
 
     # Model
     ckpt_path = REPO_ROOT / cfg["model"]["checkpoint"]
@@ -232,7 +250,7 @@ def main() -> int:
         shuffle=True,
         num_workers=cfg["train"].get("num_workers", 2),
         collate_fn=isic_collate,
-        pin_memory=(device == "cuda"),
+        pin_memory=supports_pin_memory(device),
     )
     val_loader = DataLoader(
         val_ds,
@@ -240,7 +258,7 @@ def main() -> int:
         shuffle=False,
         num_workers=cfg["eval"].get("num_workers", 2),
         collate_fn=isic_collate,
-        pin_memory=(device == "cuda"),
+        pin_memory=supports_pin_memory(device),
     )
 
     # Optimizer / scheduler
@@ -253,7 +271,7 @@ def main() -> int:
     epochs = int(cfg["train"]["epochs"])
     scheduler = CosineAnnealingLR(optimizer, T_max=epochs)
 
-    amp = bool(cfg["train"].get("amp", True)) and device == "cuda"
+    amp = bool(cfg["train"].get("amp", True)) and supports_amp(device)
     scaler = torch.amp.GradScaler() if amp else None
     print(f"[train] amp={amp} epochs={epochs} batch={cfg['train']['batch_size']}")
 
@@ -272,8 +290,7 @@ def main() -> int:
         log_w.writerow(["epoch", "train_loss", "train_bce", "train_dice_loss",
                         "val_dice", "val_iou", "lr", "epoch_s"])
 
-    if device == "cuda":
-        torch.cuda.reset_peak_memory_stats()
+    reset_peak_memory(device)
 
     best_val = 0.0
     start_epoch = 1
@@ -318,9 +335,8 @@ def main() -> int:
         # on hot hardware. Letting the GPU cool for a minute fixes this.
         if cooldown_s > 0:
             print(f"[train] cooldown {cooldown_s:.0f}s before val")
-            if device == "cuda":
-                torch.cuda.synchronize()
-                torch.cuda.empty_cache()
+            synchronize(device)
+            empty_cache(device)
             import gc
             gc.collect()
             time.sleep(cooldown_s)
@@ -362,7 +378,7 @@ def main() -> int:
 
     log_fh.close()
     total_min = (time.time() - t_total) / 60
-    peak_mb = torch.cuda.max_memory_allocated() / (1024 * 1024) if device == "cuda" else 0
+    peak_mb = peak_memory_mb(device)
     print(f"[train] done in {total_min:.1f} min. best val_dice={best_val:.4f} peak={peak_mb:.0f}MB")
     print(f"[train] best checkpoint -> {run_dir / 'best.pth'}")
     return 0

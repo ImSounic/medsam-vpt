@@ -5,10 +5,40 @@ Predictions and targets are expected to be 0/1.
 """
 from __future__ import annotations
 
+# --- Silence tensorflow / tensorboard chatter before anything else ---------
+# monai.metrics.utils.get_surface_distance pulls in monai's full package init,
+# which on some clusters (JupyterLab, etc.) transitively loads tensorboard ->
+# tensorflow -> ml_dtypes. That chain prints C++ INFO/ERROR lines and Python
+# tracebacks even when monai eventually works. We can't fix the cluster's
+# broken TF install, but we can:
+#   1. Tell TF's C++ logger to be quiet via env vars (must be set BEFORE
+#      tensorflow is imported, hence before monai).
+#   2. Eager-import monai inside redirected stderr/stdout so any Python-side
+#      noise during the import chain is captured silently.
+# After this block, hd95() is fast and never re-imports anything.
+import os
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
+
+import contextlib
+import io
+import warnings
 from typing import Iterable
 
 import numpy as np
 import torch
+
+_MONAI_GET_SURFACE = None
+with contextlib.redirect_stderr(io.StringIO()), \
+     contextlib.redirect_stdout(io.StringIO()), \
+     warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    try:
+        from monai.metrics.utils import get_surface_distance as _monai_gsd
+        _MONAI_GET_SURFACE = _monai_gsd
+    except Exception:
+        # monai unavailable / broken on this machine — hd95() falls back to scipy.
+        _MONAI_GET_SURFACE = None
 
 
 def _to_numpy(x) -> np.ndarray:
@@ -52,32 +82,33 @@ def hd95(pred, target) -> float:
     if pred.sum() == 0 or target.sum() == 0:
         return float("inf")
 
-    try:
-        # monai expects (B, C, H, W) tensors with channel dim
-        from monai.metrics.utils import get_surface_distance
+    if _MONAI_GET_SURFACE is not None:
+        try:
+            # symmetric 95th-percentile
+            d1 = _MONAI_GET_SURFACE(pred, target, distance_metric="euclidean")
+            d2 = _MONAI_GET_SURFACE(target, pred, distance_metric="euclidean")
+            d = np.concatenate([d1, d2])
+            if len(d) == 0:
+                return 0.0
+            return float(np.percentile(d, 95))
+        except Exception:
+            pass  # fall through to scipy
 
-        # symmetric 95th-percentile
-        d1 = get_surface_distance(pred, target, distance_metric="euclidean")
-        d2 = get_surface_distance(target, pred, distance_metric="euclidean")
-        d = np.concatenate([d1, d2])
-        if len(d) == 0:
-            return 0.0
-        return float(np.percentile(d, 95))
-    except Exception:
-        # Fallback: distance transforms via scipy
-        from scipy.ndimage import distance_transform_edt
+    # Fallback: distance transforms via scipy (used if monai is unavailable
+    # or raises at call time)
+    from scipy.ndimage import distance_transform_edt
 
-        # Distance from each pred boundary point to nearest target point
-        target_dt = distance_transform_edt(~target)
-        pred_dt = distance_transform_edt(~pred)
+    # Distance from each pred boundary point to nearest target point
+    target_dt = distance_transform_edt(~target)
+    pred_dt = distance_transform_edt(~pred)
 
-        # Boundary-only is more correct, but for a fallback we use full-mask DTs
-        d_pred_to_target = target_dt[pred]
-        d_target_to_pred = pred_dt[target]
-        d_all = np.concatenate([d_pred_to_target, d_target_to_pred])
-        if len(d_all) == 0:
-            return 0.0
-        return float(np.percentile(d_all, 95))
+    # Boundary-only is more correct, but for a fallback we use full-mask DTs
+    d_pred_to_target = target_dt[pred]
+    d_target_to_pred = pred_dt[target]
+    d_all = np.concatenate([d_pred_to_target, d_target_to_pred])
+    if len(d_all) == 0:
+        return 0.0
+    return float(np.percentile(d_all, 95))
 
 
 def aggregate_metrics(per_image: list[dict]) -> dict:

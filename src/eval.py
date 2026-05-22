@@ -34,6 +34,12 @@ from src.data.busi import BUSI
 from src.data.cbis_ddsm import CBISDDSM
 from src.data.isic import ISIC2018, isic_collate
 from src.data.ph2 import PH2
+from src.device_utils import (
+    device_name,
+    get_device,
+    peak_memory_mb,
+    reset_peak_memory,
+)
 from src.metrics import aggregate_metrics, dice_score, hd95, iou_score
 from src.models.medsam import load_medsam
 from src.models.methods import setup_method
@@ -129,13 +135,18 @@ def predict_batch(sam, images: torch.Tensor, bboxes: torch.Tensor) -> torch.Tens
 
 
 def evaluate(cfg: dict, args: argparse.Namespace) -> int:
-    device = args.device or cfg["eval"].get("device", "cuda")
-    if device == "cuda" and not torch.cuda.is_available():
-        print("[eval] CUDA not available, falling back to CPU.")
-        device = "cpu"
+    # User override (--device) or config preference, otherwise auto-pick
+    # the best of CUDA > MPS > CPU. The config historically says "cuda";
+    # if CUDA isn't available we silently consider MPS too, instead of
+    # going straight to CPU.
+    preferred = args.device or cfg["eval"].get("device")
+    if preferred == "cuda" and not torch.cuda.is_available():
+        # config asked for CUDA but it's not here — let auto-pick reach MPS/CPU
+        preferred = None
+    device = get_device(prefer=preferred)
 
     image_size = cfg["model"]["image_size"]
-    print(f"[eval] device={device} image_size={image_size}")
+    print(f"[eval] device={device} ({device_name(device)}) image_size={image_size}")
 
     # Load base MedSAM (always — even for trained methods, this provides the
     # frozen backbone that the trainable_state will overlay onto).
@@ -184,8 +195,7 @@ def evaluate(cfg: dict, args: argparse.Namespace) -> int:
 
     sam.eval()
 
-    if device == "cuda":
-        torch.cuda.reset_peak_memory_stats()
+    reset_peak_memory(device)
 
     rows_for_csv: list[dict] = []
 
@@ -227,9 +237,7 @@ def evaluate(cfg: dict, args: argparse.Namespace) -> int:
         elapsed = time.time() - t0
 
         agg = aggregate_metrics(per_image)
-        peak_mb = (
-            torch.cuda.max_memory_allocated() / (1024 * 1024) if device == "cuda" else 0.0
-        )
+        peak_mb = peak_memory_mb(device)
         print(
             f"[eval] {ds_name}: dice={agg['dice_mean']:.4f}±{agg['dice_std']:.4f} "
             f"iou={agg['iou_mean']:.4f} hd95={agg['hd95_mean']:.2f}px "

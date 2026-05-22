@@ -16,7 +16,7 @@ from segment_anything.modeling import Sam
 def load_medsam(
     checkpoint_path: str | Path,
     arch: str = "vit_b",
-    device: str | torch.device = "cuda",
+    device: str | torch.device | None = None,
 ) -> Sam:
     """Load MedSAM weights into a SAM ViT-B architecture and return it.
 
@@ -30,6 +30,11 @@ def load_medsam(
             f"MedSAM checkpoint not found at {checkpoint_path}. "
             f"Run: python scripts/download_medsam.py"
         )
+
+    # Auto-select best device if caller didn't specify (cuda > mps > cpu).
+    if device is None:
+        from src.device_utils import get_device
+        device = get_device()
 
     # Build architecture without weights
     sam: Sam = sam_model_registry[arch](checkpoint=None)
