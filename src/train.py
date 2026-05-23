@@ -235,6 +235,7 @@ def main() -> int:
         split="train",
         image_size=image_size,
         bbox_perturb_pixels=cfg["data"].get("bbox_perturb_pixels", 0),
+        random_perturb=bool(cfg["data"].get("random_perturb", False)),
     )
     val_ds = ISIC2018(
         root=REPO_ROOT / cfg["data"]["root"],

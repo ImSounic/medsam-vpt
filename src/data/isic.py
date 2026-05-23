@@ -26,8 +26,21 @@ PIXEL_MEAN = torch.tensor([123.675, 116.28, 103.53]).view(3, 1, 1)
 PIXEL_STD = torch.tensor([58.395, 57.12, 57.375]).view(3, 1, 1)
 
 
-def _bbox_from_mask(mask: np.ndarray, perturb_px: int = 0) -> np.ndarray:
+def _bbox_from_mask(
+    mask: np.ndarray,
+    perturb_px: int = 0,
+    random_perturb: bool = False,
+) -> np.ndarray:
     """Tight bounding box around mask>0, optionally perturbed.
+
+    Args:
+        mask: 2-D uint8 array, values >0 = foreground.
+        perturb_px: max ± displacement per corner, in px. 0 = exact tight box.
+        random_perturb: if True, each call first samples `actual_px` from
+            uniform [0, perturb_px], then uses that as the corner-level bound.
+            Models a wide prompt-quality distribution rather than a single
+            fixed noise level — matches SAM/MedSAM pretraining style.
+            If False (default), each call uses perturb_px directly.
 
     Returns [x1, y1, x2, y2] (inclusive) in mask's coordinate frame.
     Falls back to the full image if the mask is empty.
@@ -40,12 +53,14 @@ def _bbox_from_mask(mask: np.ndarray, perturb_px: int = 0) -> np.ndarray:
     y1, y2 = ys.min(), ys.max()
     if perturb_px > 0:
         rng = np.random.default_rng()
-        dx = rng.integers(-perturb_px, perturb_px + 1, size=2)
-        dy = rng.integers(-perturb_px, perturb_px + 1, size=2)
-        x1 = max(0, x1 + dx[0])
-        y1 = max(0, y1 + dy[0])
-        x2 = min(mask.shape[1] - 1, x2 + dx[1])
-        y2 = min(mask.shape[0] - 1, y2 + dy[1])
+        actual = int(rng.integers(0, perturb_px + 1)) if random_perturb else perturb_px
+        if actual > 0:
+            dx = rng.integers(-actual, actual + 1, size=2)
+            dy = rng.integers(-actual, actual + 1, size=2)
+            x1 = max(0, x1 + dx[0])
+            y1 = max(0, y1 + dy[0])
+            x2 = min(mask.shape[1] - 1, x2 + dx[1])
+            y2 = min(mask.shape[0] - 1, y2 + dy[1])
     return np.array([x1, y1, x2, y2], dtype=np.float32)
 
 
@@ -57,6 +72,10 @@ class ISIC2018(Dataset):
         split: one of "train", "val", "test".
         image_size: square size to resize to (e.g. 1024 for native MedSAM).
         bbox_perturb_pixels: max pixel jitter on bbox prompts (0 = exact).
+        random_perturb: if True, each __getitem__ samples its actual perturb
+            magnitude from uniform [0, bbox_perturb_pixels] before applying
+            corner-level jitter. Use for training models that need to be
+            robust across the full prompt-quality spectrum.
     """
 
     def __init__(
@@ -65,12 +84,14 @@ class ISIC2018(Dataset):
         split: Literal["train", "val", "test"] = "test",
         image_size: int = 1024,
         bbox_perturb_pixels: int = 0,
+        random_perturb: bool = False,
     ) -> None:
         super().__init__()
         self.root = Path(root)
         self.split = split
         self.image_size = image_size
         self.bbox_perturb_pixels = bbox_perturb_pixels
+        self.random_perturb = random_perturb
 
         img_dir = self.root / f"{split}_images"
         msk_dir = self.root / f"{split}_masks"
@@ -114,7 +135,11 @@ class ISIC2018(Dataset):
         msk_np = (np.asarray(msk_pil, dtype=np.uint8) > 127).astype(np.uint8)
 
         # Bbox in resized-image coordinates
-        bbox = _bbox_from_mask(msk_np, perturb_px=self.bbox_perturb_pixels)
+        bbox = _bbox_from_mask(
+            msk_np,
+            perturb_px=self.bbox_perturb_pixels,
+            random_perturb=self.random_perturb,
+        )
 
         # Image to tensor (C, H, W), normalise.
         img_tensor = torch.from_numpy(img_np).permute(2, 0, 1).contiguous()
