@@ -399,6 +399,209 @@ def plot_tradeoff_modality(df: pd.DataFrame, out_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Plot 5: multi-heatmap — 4 datasets × 3 trainings, absolute Dice
+# ---------------------------------------------------------------------------
+
+def plot_multi_heatmap_3way(df: pd.DataFrame, out_path: Path) -> None:
+    """4 rows (datasets) × 3 columns (trainings). Each cell is a small heatmap
+    with methods on the y-axis and perturb levels on the x-axis. All cells
+    share the same Dice color scale so you can read the entire experiment
+    matrix in one glance.
+    """
+    n_rows = len(DATASET_ORDER)
+    n_cols = 3
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, 4.2 * n_rows),
+                              sharex=True, sharey=True)
+
+    trainings = ("pm=0", "pm=20", "rand100")
+    DICE_MIN, DICE_MAX = 0.10, 0.96
+
+    for row_i, ds in enumerate(DATASET_ORDER):
+        for col_i, training in enumerate(trainings):
+            ax = axes[row_i, col_i]
+            sub = df[(df["dataset"] == ds) & (df["training"] == training)]
+            grid = pd.DataFrame(
+                index=METHOD_ORDER, columns=PERTURBS, dtype=float,
+            )
+            for m in METHOD_ORDER:
+                for p in PERTURBS:
+                    matched = sub[(sub["method"] == m) & (sub["perturb_max_px"] == p)]
+                    grid.loc[m, p] = float(matched["dice_mean"].iloc[0]) if not matched.empty else np.nan
+
+            im = ax.imshow(grid.values.astype(float),
+                            cmap="RdYlGn", vmin=DICE_MIN, vmax=DICE_MAX,
+                            aspect="auto")
+            ax.set_xticks(range(len(PERTURBS)))
+            ax.set_xticklabels([str(p) for p in PERTURBS])
+            ax.set_yticks(range(len(METHOD_ORDER)))
+            ax.set_yticklabels([METHOD_LABELS[m] for m in METHOD_ORDER])
+            if row_i == 0:
+                ax.set_title(f"Trained: {training}", fontsize=12, fontweight="bold")
+            if col_i == 0:
+                ax.set_ylabel(DATASET_LABELS.get(ds, ds), fontsize=11, fontweight="bold")
+            if row_i == n_rows - 1:
+                ax.set_xlabel("Eval bbox max expansion (px)")
+            # Cell-value annotations
+            for i in range(grid.shape[0]):
+                for j in range(grid.shape[1]):
+                    val = float(grid.values[i, j])
+                    if np.isnan(val):
+                        continue
+                    ax.text(j, i, f"{val:.2f}",
+                             ha="center", va="center",
+                             color="black" if val > 0.55 else "white",
+                             fontsize=8.5)
+
+    cbar = fig.colorbar(im, ax=axes.ravel().tolist(), fraction=0.018, pad=0.02)
+    cbar.set_label("Dice", fontsize=11)
+    fig.suptitle(
+        "Full experiment matrix: Dice across all methods × datasets × perturb levels × trainings",
+        fontsize=13, y=1.00,
+    )
+    fig.savefig(out_path, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[compare] wrote {out_path}")
+
+
+# ---------------------------------------------------------------------------
+# Plot 6 / 7: grouped bar charts at tight bbox and extreme perturb
+# ---------------------------------------------------------------------------
+
+def _grouped_bars_panel(ax, df_panel, perturb: int) -> None:
+    """One panel: x=method, hue=training, y=Dice at the given perturb level."""
+    n_trainings = 3
+    bar_w = 0.26
+    x_positions = np.arange(len(METHOD_ORDER))
+    training_palette = {"pm=0": "#1f77b4", "pm=20": "#ff7f0e", "rand100": "#2ca02c"}
+
+    for ti, training in enumerate(("pm=0", "pm=20", "rand100")):
+        vals = []
+        for m in METHOD_ORDER:
+            if m == "zero_shot" and training != "pm=0":
+                vals.append(np.nan)  # skip — same as pm=0
+                continue
+            sub = df_panel[(df_panel["method"] == m) &
+                           (df_panel["training"] == training) &
+                           (df_panel["perturb_max_px"] == perturb)]
+            vals.append(float(sub["dice_mean"].iloc[0]) if not sub.empty else np.nan)
+        offsets = (ti - 1) * bar_w  # center the group
+        bars = ax.bar(x_positions + offsets, vals, width=bar_w,
+                       label=training, color=training_palette[training],
+                       edgecolor="black", linewidth=0.5)
+        # Annotate Dice values on top of each bar
+        for x, v in zip(x_positions + offsets, vals):
+            if not np.isnan(v):
+                ax.text(x, v + 0.01, f"{v:.2f}",
+                         ha="center", va="bottom", fontsize=7.5, rotation=0)
+
+    ax.set_xticks(x_positions)
+    ax.set_xticklabels([METHOD_LABELS[m] for m in METHOD_ORDER], rotation=20, ha="right")
+    ax.set_ylim(0, 1.05)
+    ax.grid(axis="y", alpha=0.3)
+    ax.set_ylabel("Dice")
+
+
+def plot_bars_perturb(df: pd.DataFrame, out_path: Path, perturb: int,
+                       title_suffix: str) -> None:
+    """4 dataset panels, each showing grouped bars (method × training) at one perturb level."""
+    fig, axes = plt.subplots(2, 2, figsize=(15, 11))
+    axes_flat = axes.flatten()
+
+    for ax, ds in zip(axes_flat, DATASET_ORDER):
+        sub = df[df["dataset"] == ds]
+        _grouped_bars_panel(ax, sub, perturb)
+        ax.set_title(DATASET_LABELS.get(ds, ds), fontsize=12)
+
+    # One shared legend
+    handles = [
+        plt.Rectangle((0, 0), 1, 1, color="#1f77b4", ec="black", label="pm=0 trained"),
+        plt.Rectangle((0, 0), 1, 1, color="#ff7f0e", ec="black", label="pm=20 trained"),
+        plt.Rectangle((0, 0), 1, 1, color="#2ca02c", ec="black", label="rand100 trained"),
+    ]
+    fig.legend(handles=handles, loc="lower center", ncol=3, frameon=False,
+                bbox_to_anchor=(0.5, -0.02), fontsize=11)
+    fig.suptitle(
+        f"Dice by method × training condition  —  {title_suffix}",
+        fontsize=13, y=1.00,
+    )
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[compare] wrote {out_path}")
+
+
+# ---------------------------------------------------------------------------
+# Plot 8: Δ summary bars — average ΔDice from pm=0 baseline, per (method, dataset)
+# ---------------------------------------------------------------------------
+
+def plot_delta_summary_bars(df: pd.DataFrame, out_path: Path) -> None:
+    """For each method × dataset, two grouped bars:
+       - ΔDice (pm=20 vs pm=0), averaged across all 5 perturb levels
+       - ΔDice (rand100 vs pm=0), averaged across all 5 perturb levels
+       Shows which (method, dataset) cells benefit / regress from jitter training,
+       and whether widening the jitter (rand100) amplifies the effect.
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(15, 10), sharey=True)
+    axes_flat = axes.flatten()
+
+    plot_methods = [m for m in METHOD_ORDER if m != "zero_shot"]
+    bar_w = 0.35
+    palette = {"pm=20": "#ff7f0e", "rand100": "#2ca02c"}
+
+    for ax, ds in zip(axes_flat, DATASET_ORDER):
+        sub = df[df["dataset"] == ds]
+
+        deltas_pm20 = []
+        deltas_rand100 = []
+        for m in plot_methods:
+            base = sub[(sub["method"] == m) & (sub["training"] == "pm=0")].set_index("perturb_max_px")["dice_mean"]
+            t20  = sub[(sub["method"] == m) & (sub["training"] == "pm=20")].set_index("perturb_max_px")["dice_mean"]
+            t100 = sub[(sub["method"] == m) & (sub["training"] == "rand100")].set_index("perturb_max_px")["dice_mean"]
+            deltas_pm20.append((t20 - base).mean() if not t20.empty else np.nan)
+            deltas_rand100.append((t100 - base).mean() if not t100.empty else np.nan)
+
+        x_positions = np.arange(len(plot_methods))
+        ax.bar(x_positions - bar_w / 2, deltas_pm20, width=bar_w,
+                color=palette["pm=20"], edgecolor="black", linewidth=0.5,
+                label="pm=20 − pm=0")
+        ax.bar(x_positions + bar_w / 2, deltas_rand100, width=bar_w,
+                color=palette["rand100"], edgecolor="black", linewidth=0.5,
+                label="rand100 − pm=0")
+        for x, v in zip(x_positions - bar_w / 2, deltas_pm20):
+            if not np.isnan(v):
+                ax.text(x, v + (0.005 if v >= 0 else -0.012), f"{v:+.2f}",
+                         ha="center", va="bottom" if v >= 0 else "top", fontsize=7.5)
+        for x, v in zip(x_positions + bar_w / 2, deltas_rand100):
+            if not np.isnan(v):
+                ax.text(x, v + (0.005 if v >= 0 else -0.012), f"{v:+.2f}",
+                         ha="center", va="bottom" if v >= 0 else "top", fontsize=7.5)
+
+        ax.axhline(0, color="black", linewidth=0.8)
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels([METHOD_LABELS[m] for m in plot_methods],
+                            rotation=20, ha="right")
+        ax.set_title(DATASET_LABELS.get(ds, ds), fontsize=12)
+        ax.set_ylabel("ΔDice (averaged across 5 perturb levels)")
+        ax.grid(axis="y", alpha=0.3)
+        ax.set_ylim(-0.35, 0.15)
+
+    handles = [
+        plt.Rectangle((0, 0), 1, 1, color="#ff7f0e", ec="black", label="pm=20 trained vs pm=0 baseline"),
+        plt.Rectangle((0, 0), 1, 1, color="#2ca02c", ec="black", label="rand100 trained vs pm=0 baseline"),
+    ]
+    fig.legend(handles=handles, loc="lower center", ncol=2, frameon=False,
+                bbox_to_anchor=(0.5, -0.02), fontsize=11)
+    fig.suptitle(
+        "Average ΔDice from pm=0 baseline (positive = jitter training helped; negative = it hurt)",
+        fontsize=13, y=1.00,
+    )
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[compare] wrote {out_path}")
+
+
+# ---------------------------------------------------------------------------
 # Long-form 3-way summary CSV
 # ---------------------------------------------------------------------------
 
@@ -482,10 +685,20 @@ def main() -> int:
           f"({df['method'].nunique()} methods × {df['dataset'].nunique()} datasets × "
           f"{df['perturb_max_px'].nunique()} perturb levels × {df['training'].nunique()} trainings)")
 
+    # Original (kept for backward compat — busy but complete)
     plot_overlay_curves(df, OUT_DIR / "comparison_curves_3way.png")
     plot_delta_heatmap(df, OUT_DIR / "delta_heatmap_3way.png")
     plot_tradeoff_id_vs_perturbation(df, OUT_DIR / "tradeoff_id_vs_perturbation.png")
     plot_tradeoff_modality(df, OUT_DIR / "tradeoff_isic_vs_cbis.png")
+
+    # New cleaner figures (the ones to actually look at)
+    plot_multi_heatmap_3way(df, OUT_DIR / "multi_heatmap_3way.png")
+    plot_bars_perturb(df, OUT_DIR / "bars_tight_bbox.png",
+                       perturb=0, title_suffix="at tight bbox (pm=0)")
+    plot_bars_perturb(df, OUT_DIR / "bars_extreme_perturb.png",
+                       perturb=200, title_suffix="at extreme perturbation (pm=200)")
+    plot_delta_summary_bars(df, OUT_DIR / "delta_summary_bars.png")
+
     write_summary_3way(df, OUT_SUMMARY_3WAY)
     write_summary_full(df, OUT_SUMMARY_FULL)
     return 0
