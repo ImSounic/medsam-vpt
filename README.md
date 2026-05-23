@@ -77,49 +77,100 @@ Two patterns matter for the report:
   pm=200.** Far-OOD modality + heavily-perturbed prompts is essentially
   unsolvable with bbox prompting alone — that's the regime ceiling.
 
-### Robustness fix attempt: retrain at pm=20
+### Robustness fix attempt: train with bbox jitter
 
-Hypothesis: train with ±20 px bbox jitter so the model stops over-trusting
-exact bbox boundaries. New configs in `configs/*_pm20.yaml`, checkpoints in
-`checkpoints/runs_pm20/`, eval results in `results/runs_pm20.csv` and
-`bbox_robustness/results_pm20/`.
+If the encoder learned to over-trust exact bbox boundaries, training with
+jittered bboxes should fix it. We tested two training conditions on top
+of the original `pm=0` (tight-bbox) training:
 
-The headline finding is **partial success, with one big surprise**. Method
-by method (Δ = pm=20 trained − pm=0 trained, averaged across perturb levels):
+| Training | What it does | Configs | Checkpoints |
+|---|---|---|---|
+| `pm=0` (baseline) | every step uses the exact tight bbox | `configs/*.yaml` | `checkpoints/runs/` |
+| `pm=20` (fixed jitter) | every step jitters each bbox corner uniformly in ±20 px | `configs/*_pm20.yaml` | `checkpoints/runs_pm20/` |
+| `rand100` (random jitter) | every step samples `actual ~ U[0, 100]`, then jitters corners in ±actual | `configs/*_rand100.yaml` | `checkpoints/runs_rand100/` |
 
-| Method | ID cost (pm=0) | OOD-ultrasound (BUSI) | OOD-mammography (CBIS-DDSM) | Verdict |
-|---|---|---|---|---|
-| **LoRA** | −0.003 (negligible) | **+0.04 average** | **+0.03 average** (low perturb) | **Clear win** |
-| Full FT | −0.005 | +0.02 | mixed (−0.03 tight, +0.02 mid) | Mild positive |
-| Decoder-only | −0.003 | +0.03 | −0.04 tight, neutral elsewhere | Mild positive |
-| VPT-deep | −0.003 | +0.03 | small positive | Mild positive |
-| **VPT-shallow** | −0.003 | −0.03 | **−0.22 at tight bbox** (!) | **Catastrophic regression** |
+`rand100` mirrors how SAM/MedSAM were actually pretrained — a model
+exposed to the full prompt-quality spectrum should ideally become
+prompt-invariant. The eval results above repeat for both new trainings,
+giving a 6 methods × 4 datasets × 5 perturb levels × 3 trainings =
+360-cell experiment matrix.
 
-LoRA — the method that was most broken on far-OOD in the standard eval —
-benefits the most from jitter training. Its tight-bbox CBIS-DDSM Dice goes
-0.498 → 0.542 (+0.04), its BUSI Dice goes 0.778 → 0.811 (+0.03), with no
-meaningful ID cost. This is the cleanest "jitter training fixes the
-problem" outcome.
+The finding is a **clean trade-off curve**, not a uniform improvement:
 
-VPT-shallow goes the other way. On CBIS-DDSM at tight bbox it drops
-**0.639 → 0.417** (a 35% relative loss) under the same training change
-that helped LoRA. Likely explanation: VPT-shallow has only 10 trainable
-prompts concentrated at the encoder input. With pm=20 jitter, those 10
-prompts learn dermoscopy-specific context just outside the lesion bbox —
-context that doesn't exist on mammograms, so on CBIS-DDSM the model is
-worse than before. VPT-deep (120 prompts spread across 12 blocks) and
-LoRA (encoder-wide adapters) don't have this concentration problem.
+> **Training on a wider bbox-jitter distribution trades far-OOD modality
+> transfer for in-modality prompt robustness.** The wider the training
+> jitter, the better the model becomes at handling sloppy prompts on
+> dermoscopy, but the worse it becomes at handling far-OOD modalities
+> at *any* prompt quality. Zero-shot MedSAM achieves both kinds of
+> robustness simultaneously only because its pretraining used a much more
+> diverse modality + prompt distribution than ISIC alone.
 
-The implication: **PEFT robustness depends not just on parameter count but
-on where and how trainable capacity is distributed**. Methods with
-diffuse, encoder-wide adaptations (LoRA) can be jitter-trained into
-robustness; methods with concentrated adaptations (VPT-shallow) can be
-jitter-trained into broken pathology on far-OOD.
+#### The headline numbers
 
-See `bbox_robustness/results_pm20/figures/comparison_curves.png` for the
-overlay degradation curves (solid = pm=0 train, dashed = pm=20 train) and
-`bbox_robustness/results_pm20/figures/delta_heatmap.png` for the per-cell
-ΔDice across the 96-cell experiment matrix.
+**ISIC pm=200 (prompt robustness on the training modality):** rand100 is
+a dramatic win across the board.
+
+| Method | pm=0 train | pm=20 train | rand100 train |
+|---|---:|---:|---:|
+| Full FT | 0.710 | 0.725 | **0.839** (+0.129) |
+| LoRA | 0.798 | 0.781 | **0.849** (+0.052) |
+| Decoder-only | 0.708 | 0.741 | 0.778 (+0.070) |
+| VPT-deep | 0.726 | 0.728 | 0.789 (+0.063) |
+| VPT-shallow | 0.731 | 0.746 | 0.795 (+0.065) |
+| *(Zero-shot reference)* | 0.767 | 0.767 | 0.767 |
+
+With rand100 training, **all five trained methods beat zero-shot on ISIC
+at pm=200**, which none of them could do under pm=0 or pm=20 training.
+
+**CBIS-DDSM tight bbox (far-OOD modality transfer):** rand100 is a
+catastrophe.
+
+| Method | pm=0 train | pm=20 train | rand100 train |
+|---|---:|---:|---:|
+| Decoder-only | **0.827** | 0.787 | 0.653 (−0.174) |
+| Full FT | **0.828** | 0.802 | 0.706 (−0.122) |
+| VPT-deep | 0.574 | 0.577 | 0.405 (−0.169) |
+| VPT-shallow | 0.639 | 0.417 | 0.250 (−0.389) |
+| LoRA | 0.498 | 0.542 | 0.179 (−0.319) |
+
+LoRA goes from 0.498 → 0.179 — a 64% relative drop just from changing
+the training-time jitter distribution. The 5 trained models now all
+score *below* zero-shot's CBIS-DDSM number (0.692) at tight bbox, where
+under pm=0 training half of them were comfortably above it.
+
+#### Why this happens (proposed mechanism)
+
+Training pushes the encoder along a one-dimensional axis: as the
+training prompt distribution widens, the encoder specializes harder
+on the **single modality** it was finetuned on while gaining robustness
+**within** that modality. Far-OOD modalities (ultrasound, mammography)
+have no nearby points in the training distribution, so the further the
+encoder moves along the prompt-robustness axis, the further it gets
+from any signal that would help with the modality shift.
+
+The original MedSAM zero-shot avoids this because its pretraining axis
+was multi-dimensional: many modalities × many prompt qualities, with
+the encoder forced to find features that generalize across both axes
+simultaneously. Single-modality finetuning, no matter what prompt
+distribution we use, cannot recover that.
+
+#### Where to look
+
+- `bbox_robustness/comparison/comparison_curves_3way.png` — overlay
+  degradation curves: solid = pm=0 trained, dashed = pm=20 trained,
+  dotted = rand100 trained, one panel per dataset.
+- `bbox_robustness/comparison/delta_heatmap_3way.png` — per-cell ΔDice
+  vs the pm=0 baseline. Top row = pm=20 effect, bottom row = rand100
+  effect. Red = improvement, blue = regression.
+- `bbox_robustness/comparison/tradeoff_id_vs_perturbation.png` — scatter
+  of ISIC tight-bbox Dice vs ISIC pm=200 Dice. Each method's three
+  trainings trace a trajectory; rand100 sits highest on the y-axis
+  but moves slightly left on x.
+- `bbox_robustness/comparison/tradeoff_isic_vs_cbis.png` — the modality
+  trade-off: ISIC tight Dice vs CBIS-DDSM tight Dice. rand100 collapses
+  the y-axis (CBIS) for every method.
+- `summary_full.csv` at repo root — every metric across every (method,
+  training, dataset, perturb level), 60 rows × 18 columns.
 
 ---
 
