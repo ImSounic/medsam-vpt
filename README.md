@@ -45,6 +45,84 @@ for the complete numeric table.
 
 ---
 
+## Bbox prompt robustness — a second, harder finding
+
+The standard eval above uses pixel-perfect bounding boxes derived from the
+ground-truth mask. That's unrealistic — a clinician draws an approximate,
+generous bbox, not a tight one. To test how each method holds up under
+realistic prompt imprecision, we re-evaluate every model with bboxes whose
+sides are independently expanded outward by 0–N px (random per image).
+N ∈ {20, 50, 100, 200} px. Full details in `bbox_robustness/`.
+
+The headline picture is in `bbox_robustness/results/figures/degradation_curves.png`.
+A few of the numbers it summarises:
+
+| | ISIC pm=0 → pm=200 | BUSI pm=0 → pm=200 | CBIS-DDSM pm=0 → pm=200 |
+|---|:--:|:--:|:--:|
+| Zero-shot | 0.907 → 0.767 (−0.140) | 0.823 → **0.602** | 0.692 → 0.189 |
+| Full FT | 0.961 → 0.710 (−0.251) | 0.899 → 0.501 | 0.828 → 0.170 |
+| Decoder-only | 0.949 → 0.708 | 0.894 → 0.489 | 0.827 → 0.157 |
+| LoRA | 0.954 → **0.798** | 0.778 → 0.487 | 0.498 → **0.143** |
+| VPT-deep | 0.947 → 0.726 | 0.800 → 0.470 | 0.574 → 0.134 |
+| VPT-shallow | 0.946 → 0.731 | 0.811 → 0.489 | 0.639 → 0.146 |
+
+Two patterns matter for the report:
+
+- **Zero-shot is the most robust method at extreme bbox imprecision on
+  ultrasound (BUSI).** All five trained methods fall harder than the
+  untrained baseline. MedSAM's pretraining used a wider prompt distribution
+  than our tight-bbox finetuning, so finetuning *removes* prompt-robustness
+  capacity it already had.
+- **On CBIS-DDSM mammography, every method collapses below 0.20 Dice at
+  pm=200.** Far-OOD modality + heavily-perturbed prompts is essentially
+  unsolvable with bbox prompting alone — that's the regime ceiling.
+
+### Robustness fix attempt: retrain at pm=20
+
+Hypothesis: train with ±20 px bbox jitter so the model stops over-trusting
+exact bbox boundaries. New configs in `configs/*_pm20.yaml`, checkpoints in
+`checkpoints/runs_pm20/`, eval results in `results/runs_pm20.csv` and
+`bbox_robustness/results_pm20/`.
+
+The headline finding is **partial success, with one big surprise**. Method
+by method (Δ = pm=20 trained − pm=0 trained, averaged across perturb levels):
+
+| Method | ID cost (pm=0) | OOD-ultrasound (BUSI) | OOD-mammography (CBIS-DDSM) | Verdict |
+|---|---|---|---|---|
+| **LoRA** | −0.003 (negligible) | **+0.04 average** | **+0.03 average** (low perturb) | **Clear win** |
+| Full FT | −0.005 | +0.02 | mixed (−0.03 tight, +0.02 mid) | Mild positive |
+| Decoder-only | −0.003 | +0.03 | −0.04 tight, neutral elsewhere | Mild positive |
+| VPT-deep | −0.003 | +0.03 | small positive | Mild positive |
+| **VPT-shallow** | −0.003 | −0.03 | **−0.22 at tight bbox** (!) | **Catastrophic regression** |
+
+LoRA — the method that was most broken on far-OOD in the standard eval —
+benefits the most from jitter training. Its tight-bbox CBIS-DDSM Dice goes
+0.498 → 0.542 (+0.04), its BUSI Dice goes 0.778 → 0.811 (+0.03), with no
+meaningful ID cost. This is the cleanest "jitter training fixes the
+problem" outcome.
+
+VPT-shallow goes the other way. On CBIS-DDSM at tight bbox it drops
+**0.639 → 0.417** (a 35% relative loss) under the same training change
+that helped LoRA. Likely explanation: VPT-shallow has only 10 trainable
+prompts concentrated at the encoder input. With pm=20 jitter, those 10
+prompts learn dermoscopy-specific context just outside the lesion bbox —
+context that doesn't exist on mammograms, so on CBIS-DDSM the model is
+worse than before. VPT-deep (120 prompts spread across 12 blocks) and
+LoRA (encoder-wide adapters) don't have this concentration problem.
+
+The implication: **PEFT robustness depends not just on parameter count but
+on where and how trainable capacity is distributed**. Methods with
+diffuse, encoder-wide adaptations (LoRA) can be jitter-trained into
+robustness; methods with concentrated adaptations (VPT-shallow) can be
+jitter-trained into broken pathology on far-OOD.
+
+See `bbox_robustness/results_pm20/figures/comparison_curves.png` for the
+overlay degradation curves (solid = pm=0 train, dashed = pm=20 train) and
+`bbox_robustness/results_pm20/figures/delta_heatmap.png` for the per-cell
+ΔDice across the 96-cell experiment matrix.
+
+---
+
 ## Methods
 
 All six methods share MedSAM ViT-B as the foundation model, the same
