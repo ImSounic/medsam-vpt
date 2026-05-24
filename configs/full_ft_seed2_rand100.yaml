@@ -1,0 +1,34 @@
+# Full fine-tuning with random bbox jitter [0, 100] per training step.
+# Image encoder + mask decoder both trainable.
+# Memory-heavy. batch=1 to stay safe on A10 / A16 (16-24 GB).
+
+name: full_ft_seed2_rand100
+method: full_ft
+seed: 2
+
+model:
+  arch: vit_b
+  checkpoint: checkpoints/medsam_vit_b.pth
+  image_size: 1024
+
+data:
+  root: data
+  bbox_perturb_pixels: 100  # upper bound of random jitter range
+  random_perturb: true      # sample actual_pm from [0, 100] per step
+
+train:
+  batch_size: 1            # full FT trains 93M params; batch=2 risks OOM
+  num_workers: 2
+  epochs: 6                # match other methods for fair comparison
+  lr: 1.0e-5               # 50x lower than PEFT — full FT needs gentler updates
+  weight_decay: 1.0e-4     # mild WD to prevent encoder drift
+  dice_weight: 0.5
+  amp: true
+  cooldown_seconds: 60     # defensive thermal pause
+
+eval:
+  batch_size: 1
+  num_workers: 2
+
+output:
+  checkpoint_dir: checkpoints/runs_seed2_rand100

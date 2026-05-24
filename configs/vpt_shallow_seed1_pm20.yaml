@@ -1,0 +1,37 @@
+# VPT-shallow with bbox jitter at training time.
+# 10 prompts at encoder input + trainable mask decoder. Encoder weights frozen.
+# Mirrors vpt_shallow.yaml except for `bbox_perturb_pixels` and output paths.
+
+name: vpt_shallow_seed1_pm20
+method: vpt_shallow
+seed: 1
+
+method_kwargs:
+  n_prompts: 10            # 7,680 prompt params + ~4M decoder params
+  gradient_checkpointing: true   # global attention at 4096 tokens needs this even on T4
+
+model:
+  arch: vit_b
+  checkpoint: checkpoints/medsam_vit_b.pth
+  image_size: 1024
+
+data:
+  root: data
+  bbox_perturb_pixels: 20  # ±20 px jitter on each corner of the bbox per training step
+
+train:
+  batch_size: 1            # safe on both 8 GB laptop and 16 GB T4; bump to 2 only on >=24 GB GPUs
+  num_workers: 2
+  epochs: 6                # decoder-only plateaued at ep 8; VPT converges faster
+  lr: 5.0e-4               # higher LR than full FT — small param set, safe to push
+  weight_decay: 0.0
+  dice_weight: 0.5
+  amp: true
+  cooldown_seconds: 60     # 60s pause before val — required on thermal-limited laptop GPUs, harmless on Colab
+
+eval:
+  batch_size: 1
+  num_workers: 2
+
+output:
+  checkpoint_dir: checkpoints/runs_seed1_pm20

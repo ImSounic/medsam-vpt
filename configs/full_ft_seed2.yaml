@@ -1,0 +1,33 @@
+# Full fine-tuning: image encoder + mask decoder both trainable.
+# Memory-heavy. Designed to run on A16/T4 (16 GB) at batch=1.
+# Will OOM on 8 GB laptop; do not run locally.
+
+name: full_ft_seed2
+method: full_ft
+seed: 2
+
+model:
+  arch: vit_b
+  checkpoint: checkpoints/medsam_vit_b.pth
+  image_size: 1024
+
+data:
+  root: data
+  bbox_perturb_pixels: 0
+
+train:
+  batch_size: 1            # full FT at 1024px needs all of A16's 16 GB
+  num_workers: 2
+  epochs: 6                # match other methods for fair comparison
+  lr: 1.0e-5               # 50x lower than PEFT — full FT needs gentler updates
+  weight_decay: 1.0e-4     # mild WD to prevent encoder drift
+  dice_weight: 0.5
+  amp: true
+  cooldown_seconds: 60     # defensive thermal pause
+
+eval:
+  batch_size: 1
+  num_workers: 2
+
+output:
+  checkpoint_dir: checkpoints/runs_seed2
