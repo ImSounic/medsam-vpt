@@ -138,39 +138,118 @@ the training-time jitter distribution. The 5 trained models now all
 score *below* zero-shot's CBIS-DDSM number (0.692) at tight bbox, where
 under pm=0 training half of them were comfortably above it.
 
-#### Why this happens (proposed mechanism)
+#### Mechanism: two separable effects
 
-Training pushes the encoder along a one-dimensional axis: as the
-training prompt distribution widens, the encoder specializes harder
-on the **single modality** it was finetuned on while gaining robustness
-**within** that modality. Far-OOD modalities (ultrasound, mammography)
-have no nearby points in the training distribution, so the further the
-encoder moves along the prompt-robustness axis, the further it gets
-from any signal that would help with the modality shift.
+We probe each (method, training) combination with `scripts/encoder_mechanism_analysis.py`,
+which measures two things on a fixed probe set of 32 images per dataset:
 
-The original MedSAM zero-shot avoids this because its pretraining axis
-was multi-dimensional: many modalities × many prompt qualities, with
-the encoder forced to find features that generalize across both axes
-simultaneously. Single-modality finetuning, no matter what prompt
-distribution we use, cannot recover that.
+- **Weight delta**: relative L2 distance of fine-tuned encoder weights to
+  base MedSAM weights, averaged over encoder layers.
+- **Feature shift**: relative L2 distance between fine-tuned and base
+  encoder *outputs* on the probe images. Captures the *effective* encoder
+  change, including LoRA adapter and VPT prompt effects that the weight
+  delta misses by construction.
+
+The data (`results/mechanism/metrics.csv`) reveals that the trade-off is
+produced by **two distinct mechanisms** that combine to produce the
+observed Dice regressions.
+
+##### Mechanism A — Encoder drift on far-OOD modalities
+
+Methods that modify the encoder (LoRA via adapters, full_ft via direct
+weight tuning) push encoder *outputs* in directions optimised for the
+training modality. On far-OOD modalities, these learned transformations
+don't align with anything useful — the encoder produces large outputs
+that bear less and less resemblance to base MedSAM features.
+
+Hard evidence:
+
+| Method × training | Feature shift on CBIS-DDSM (far-OOD) | Dice on CBIS-DDSM tight bbox |
+|---|---:|---:|
+| LoRA × pm=0 | 0.946 | 0.498 |
+| LoRA × pm=20 | **0.713** | **0.542** (+0.044) |
+| LoRA × rand100 | 0.881 | 0.179 (−0.319) |
+| Full FT × pm=0 | 0.600 | 0.828 |
+| Full FT × pm=20 | 0.645 | 0.802 (−0.027) |
+| Full FT × rand100 | **1.036** | 0.706 (−0.122) |
+
+For LoRA on CBIS-DDSM, when pm=20 training pulled the encoder's CBIS
+features *closer* to base (shift 0.946 → 0.713), Dice **improved**
+(+0.044). When rand100 pushed shift *back up* (to 0.881), Dice
+**collapsed** (−0.319). The mechanism runs visibly in both directions.
+
+For Full FT on CBIS-DDSM, the relationship is monotonic: shift
+0.600 → 0.645 → 1.036 and Dice 0.828 → 0.802 → 0.706. At rand100,
+feature shift is greater than 1.0 — i.e., the fine-tuned encoder output
+is more different from base than zero is, meaning fully reorganized
+features that don't align with the mammography manifold the base
+encoder understood.
+
+Critically, weight delta on the same checkpoints is *tiny* (Full FT
+peaks at 0.009 relative L2). Most of the encoder drift happens through
+nonlinear amplification — small weight changes cause large output changes
+specifically on inputs far from the training distribution. **The drift
+is invisible in weight space and only visible in feature space.**
+
+##### Mechanism B — Decoder prompt-distribution sensitivity
+
+Even when the encoder is completely untouched (decoder_only freezes
+the encoder and adds no encoder-side parameters), the mask decoder
+learns to expect a specific prompt distribution and a specific input
+distribution. Training the decoder on wider jitter teaches it
+heuristics ("loose bbox → look in a wider neighbourhood") that work
+on dermoscopy but fail on mammography.
+
+Hard evidence:
+
+| Method × training | Feature shift on CBIS-DDSM | Dice on CBIS-DDSM tight bbox |
+|---|---:|---:|
+| Decoder-only × pm=0 | 0.000 | 0.827 |
+| Decoder-only × pm=20 | 0.000 | 0.787 (−0.040) |
+| Decoder-only × rand100 | 0.000 | 0.653 (−0.174) |
+
+The encoder is bit-identical to base MedSAM across all three
+trainings (feature shift = 0.0 exactly), yet Dice on CBIS-DDSM drops
+by 0.174 going pm=0 → rand100. **This regression is entirely
+decoder-driven** — the encoder did nothing, but the trained mask
+decoder still produces worse predictions on mammography when it was
+trained on a wider prompt distribution.
+
+##### Combined effect by method
+
+- **LoRA, Full FT** suffer from both mechanisms. They show the largest
+  CBIS-DDSM regressions at rand100.
+- **Decoder-only** suffers only from mechanism B. Its regressions are
+  smaller in absolute terms but still present.
+- **VPT methods** are an interesting hybrid: their encoder feature
+  shift on far-OOD is *tiny* (VPT-shallow at 0.002 on CBIS-DDSM), yet
+  they show large CBIS regressions (VPT-shallow goes 0.639 → 0.250 at
+  rand100). The mechanism here is likely "concentrated PEFT capacity"
+  — 10 prompts at the encoder input occupy scarce adaptable capacity
+  with dermoscopy-specific transformations that simply don't trigger
+  on mammography, so the decoder gets near-base CBIS features but
+  loses whatever benefit the prompts were supposed to provide.
 
 #### Where to look
 
-- `bbox_robustness/comparison/comparison_curves_3way.png` — overlay
-  degradation curves: solid = pm=0 trained, dashed = pm=20 trained,
-  dotted = rand100 trained, one panel per dataset.
-- `bbox_robustness/comparison/delta_heatmap_3way.png` — per-cell ΔDice
-  vs the pm=0 baseline. Top row = pm=20 effect, bottom row = rand100
-  effect. Red = improvement, blue = regression.
-- `bbox_robustness/comparison/tradeoff_id_vs_perturbation.png` — scatter
-  of ISIC tight-bbox Dice vs ISIC pm=200 Dice. Each method's three
-  trainings trace a trajectory; rand100 sits highest on the y-axis
-  but moves slightly left on x.
-- `bbox_robustness/comparison/tradeoff_isic_vs_cbis.png` — the modality
-  trade-off: ISIC tight Dice vs CBIS-DDSM tight Dice. rand100 collapses
-  the y-axis (CBIS) for every method.
+- `results/mechanism/feature_shift_heatmap.png` — full 15-row × 4-column
+  view of encoder drift per (method × training × dataset). The visual
+  smoking gun: LoRA's massive shift on CBIS-DDSM at pm=0, Full FT
+  rand100 hitting 1.04, decoder-only's three rows of pure zero.
+- `results/mechanism/shift_vs_dice_trajectories.png` — per-method
+  panels showing (shift, ΔDice) trajectories across the three
+  trainings, with 4 colored lines per panel (one per dataset). The
+  cleanest visualization of both mechanisms operating in tandem.
+- `results/mechanism/weight_delta_bars.png` — sanity check showing
+  that encoder *weight* drift is small even for Full FT, and that the
+  encoder-drift story is purely a feature-space phenomenon.
+- `bbox_robustness/comparison/multi_heatmap_3way.png` — the full Dice
+  surface across all 360 cells.
+- `bbox_robustness/comparison/delta_summary_bars.png` — average ΔDice
+  from pm=0 baseline per (method, dataset) for both pm=20 and rand100
+  training. The "verdict" view.
 - `summary_full.csv` at repo root — every metric across every (method,
-  training, dataset, perturb level), 60 rows × 18 columns.
+  training, dataset, perturb level), one CSV.
 
 ---
 
