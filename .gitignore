@@ -61,3 +61,5 @@ CLAUDE.md
 
 Dataset_BUSI_with_GT
 
+seed_pipeline.log
+*.log
