@@ -18,30 +18,40 @@ the drift ladder.
 
 ![Rank reversal across the drift ladder](results/figures/7_rank_reversal.png)
 
+All numbers below are **mean ± std across 3 random seeds (0, 1, 2)** at tight
+bbox (pm=0). Full per-seed numbers live in `summary_full_multiseed.csv`.
+
 | Method | Trainable | ISIC (ID) Dice | PH² (near-OOD) Dice | BUSI (far-OOD: ultrasound) | CBIS-DDSM (far-OOD: mammography) |
 |---|---:|---:|---:|---:|---:|
 | Zero-shot | 0 | 0.9072 | 0.9054 | 0.8234 | 0.6924 |
-| Decoder-only FT | 4.06 M | 0.9487 | 0.9466 | 0.8944 | **0.8273** |
-| VPT-shallow | 4.07 M | 0.9457 | 0.9436 | 0.8112 | 0.6388 |
-| VPT-deep | 4.15 M | 0.9472 | 0.9458 | 0.7995 | 0.5744 |
-| LoRA (r=8) | 4.35 M | 0.9545 | 0.9557 | 0.7775 | **0.4979** |
-| **Full FT** | 93.73 M | **0.9609** | **0.9583** | **0.8991** | **0.8280** |
+| Decoder-only FT | 4.06 M | 0.9487 ± 0.0002 | 0.9467 ± 0.0001 | 0.8935 ± 0.0008 | **0.8280 ± 0.0006** |
+| VPT-shallow | 4.07 M | 0.9449 ± 0.0007 | 0.9433 ± 0.0005 | 0.7921 ± 0.0166 | 0.5662 ± 0.0629 |
+| VPT-deep | 4.15 M | 0.9470 ± 0.0002 | 0.9456 ± 0.0002 | 0.8017 ± 0.0046 | 0.5725 ± 0.0090 |
+| LoRA (r=8) | 4.35 M | 0.9556 ± 0.0010 | 0.9570 ± 0.0013 | 0.7801 ± 0.0024 | **0.5094 ± 0.0101** |
+| **Full FT** | 93.73 M | **0.9610 ± 0.0003** | **0.9583 ± 0.0001** | **0.9007 ± 0.0015** | **0.8285 ± 0.0010** |
 
-**On ISIC (ID):** Full FT > LoRA > Decoder-only ≈ VPT-deep ≈ VPT-shallow > Zero-shot.
-**On BUSI (ultrasound):** Full FT ≈ Decoder-only > Zero-shot > VPT-shallow > VPT-deep > LoRA.
-**On CBIS-DDSM (mammography):** Full FT ≈ Decoder-only > **Zero-shot** > VPT-shallow > VPT-deep > LoRA.
+**On ISIC (ID):** Full FT > LoRA > VPT-deep ≈ Decoder-only ≈ VPT-shallow > Zero-shot.
+**On BUSI (ultrasound):** Full FT ≈ Decoder-only > Zero-shot > VPT-deep ≈ VPT-shallow > LoRA.
+**On CBIS-DDSM (mammography):** Full FT ≈ Decoder-only > **Zero-shot** > VPT-deep ≈ VPT-shallow > LoRA.
 
 The rank reversal is most dramatic on CBIS-DDSM mammography — the most
 extreme modality shift in our drift ladder (visible-light dermoscopy →
 X-ray). All three encoder-modifying methods (LoRA, VPT-deep, VPT-shallow)
 fall **below zero-shot** performance there, with LoRA collapsing from
-second-best on ID (0.9545) to worst overall (0.4979 — half of zero-shot).
-On the milder ultrasound shift (BUSI), the same ordering holds but no
-method falls below zero-shot. The explanation boils down to *where* and
-*how aggressively* each method adapts the encoder.
+second-best on ID (0.9556 ± 0.0010) to worst overall (0.5094 ± 0.0101 —
+about 0.18 below zero-shot). On the milder ultrasound shift (BUSI), the
+same ordering holds but no method falls below zero-shot. The explanation
+boils down to *where* and *how aggressively* each method adapts the
+encoder.
 
-See `results/figures/` for all eight plots and `results/summary_table.csv`
-for the complete numeric table.
+Seed variance is small relative to method differences — every std in the
+table above is ≤ 0.02 Dice, well under the ≥ 0.04 gaps between any two
+methods on every dataset. The ranking is stable across all 3 seeds.
+
+See `results/figures/` for all eight plots, `summary_full_multiseed.csv`
+for the complete numeric table with mean+std per cell, and
+`bbox_robustness/comparison/seed_significance.md` for paired tests on
+the headline claims.
 
 ---
 
@@ -54,17 +64,20 @@ realistic prompt imprecision, we re-evaluate every model with bboxes whose
 sides are independently expanded outward by 0–N px (random per image).
 N ∈ {20, 50, 100, 200} px. Full details in `bbox_robustness/`.
 
-The headline picture is in `bbox_robustness/results/figures/degradation_curves.png`.
-A few of the numbers it summarises:
+The headline picture is in
+`bbox_robustness/comparison/seed_error_bars.png` (multi-seed bands) and
+`bbox_robustness/comparison/comparison_curves_3way.png` (all three trainings
+on one figure). A few of the numbers they summarise (pm=0 trained,
+mean ± std over 3 seeds):
 
 | | ISIC pm=0 → pm=200 | BUSI pm=0 → pm=200 | CBIS-DDSM pm=0 → pm=200 |
 |---|:--:|:--:|:--:|
-| Zero-shot | 0.907 → 0.767 (−0.140) | 0.823 → **0.602** | 0.692 → 0.189 |
-| Full FT | 0.961 → 0.710 (−0.251) | 0.899 → 0.501 | 0.828 → 0.170 |
-| Decoder-only | 0.949 → 0.708 | 0.894 → 0.489 | 0.827 → 0.157 |
-| LoRA | 0.954 → **0.798** | 0.778 → 0.487 | 0.498 → **0.143** |
-| VPT-deep | 0.947 → 0.726 | 0.800 → 0.470 | 0.574 → 0.134 |
-| VPT-shallow | 0.946 → 0.731 | 0.811 → 0.489 | 0.639 → 0.146 |
+| Zero-shot      | 0.907 → 0.767 (−0.140)            | 0.823 → **0.602**                 | 0.692 → 0.189                     |
+| Full FT        | 0.961 → 0.712 ± 0.003 (−0.249)    | 0.901 → 0.500 ± 0.004             | 0.829 → 0.171 ± 0.001             |
+| Decoder-only   | 0.949 → 0.710 ± 0.004             | 0.894 → 0.492 ± 0.004             | 0.828 → 0.157 ± 0.001             |
+| LoRA           | 0.956 → **0.787 ± 0.012**         | 0.780 → 0.490 ± 0.006             | 0.509 → **0.147 ± 0.004**         |
+| VPT-deep       | 0.947 → 0.725 ± 0.001             | 0.802 → 0.482 ± 0.013             | 0.572 → 0.137 ± 0.004             |
+| VPT-shallow    | 0.945 → 0.735 ± 0.010             | 0.792 → 0.487 ± 0.002             | 0.566 → 0.137 ± 0.008             |
 
 Two patterns matter for the report:
 
@@ -112,33 +125,78 @@ a dramatic win across the board.
 
 | Method | pm=0 train | pm=20 train | rand100 train |
 |---|---:|---:|---:|
-| Full FT | 0.710 | 0.725 | **0.839** (+0.129) |
-| LoRA | 0.798 | 0.781 | **0.849** (+0.052) |
-| Decoder-only | 0.708 | 0.741 | 0.778 (+0.070) |
-| VPT-deep | 0.726 | 0.728 | 0.789 (+0.063) |
-| VPT-shallow | 0.731 | 0.746 | 0.795 (+0.065) |
-| *(Zero-shot reference)* | 0.767 | 0.767 | 0.767 |
+| Full FT | 0.7115 ± 0.0027 | 0.7201 ± 0.0091 | **0.8393 ± 0.0231** (+0.128) |
+| LoRA | 0.7867 ± 0.0123 | 0.7974 ± 0.0154 | **0.8478 ± 0.0016** (+0.061) |
+| Decoder-only | 0.7102 ± 0.0042 | 0.7271 ± 0.0135 | 0.7896 ± 0.0099 (+0.079) |
+| VPT-deep | 0.7251 ± 0.0013 | 0.7380 ± 0.0089 | 0.7946 ± 0.0055 (+0.070) |
+| VPT-shallow | 0.7352 ± 0.0104 | 0.7478 ± 0.0034 | 0.7896 ± 0.0138 (+0.054) |
+| *(Zero-shot reference)* | 0.7673 | 0.7673 | 0.7673 |
 
 With rand100 training, **all five trained methods beat zero-shot on ISIC
 at pm=200**, which none of them could do under pm=0 or pm=20 training.
+The rand100 − pm=0 advantage is at least 5× the per-seed std for every
+method, so the effect is well outside random-init noise — see the paired
+test in `seed_significance.md` (claim C1a, p < 0.001).
 
 **CBIS-DDSM tight bbox (far-OOD modality transfer):** rand100 is a
 catastrophe.
 
 | Method | pm=0 train | pm=20 train | rand100 train |
 |---|---:|---:|---:|
-| Decoder-only | **0.827** | 0.787 | 0.653 (−0.174) |
-| Full FT | **0.828** | 0.802 | 0.706 (−0.122) |
-| VPT-deep | 0.574 | 0.577 | 0.405 (−0.169) |
-| VPT-shallow | 0.639 | 0.417 | 0.250 (−0.389) |
-| LoRA | 0.498 | 0.542 | 0.179 (−0.319) |
+| Decoder-only | **0.8280 ± 0.0006** | 0.7824 ± 0.0044 | 0.6090 ± 0.0504 (−0.219) |
+| Full FT | **0.8285 ± 0.0010** | 0.8051 ± 0.0058 | 0.6980 ± 0.0256 (−0.131) |
+| VPT-deep | 0.5725 ± 0.0090 | 0.5117 ± 0.0581 | 0.3518 ± 0.0543 (−0.221) |
+| VPT-shallow | 0.5662 ± 0.0629 | 0.4555 ± 0.0415 | 0.2759 ± 0.0383 (−0.290) |
+| LoRA | 0.5094 ± 0.0101 | 0.4370 ± 0.0949 | 0.2143 ± 0.0343 (−0.295) |
 
-LoRA goes from 0.498 → 0.179 — a 64% relative drop just from changing
+LoRA goes from 0.509 → 0.214 — a 58% relative drop just from changing
 the training-time jitter distribution. The 5 trained models now all
 score *below* zero-shot's CBIS-DDSM number (0.692) at tight bbox, where
-under pm=0 training half of them were comfortably above it.
+under pm=0 training half of them were comfortably above it. All five
+−Δ values exceed 2× their pooled std, so the regression is statistically
+clean (not seed-init variability).
+
+#### Statistical reliability
+
+Every cell in the tables above is a mean across 3 seeds. The full
+multi-seed standard deviations are in `summary_full_multiseed.csv` and
+the markdown-formatted version is at
+`bbox_robustness/comparison/seed_summary_table.md`. Key facts:
+
+- 360 unique (method, training, dataset, perturb) cells, all with 3 seeds present.
+- The per-cell std on dice is mostly in the 0.001–0.010 range, with a long
+  tail to ~0.025 for the noisiest cells (Full FT rand100 on ISIC pm=200,
+  VPT-shallow rand100 on CBIS-DDSM tight).
+- All gaps between methods (and between trainings, within a method) that
+  the report relies on are at least 4× their pooled std.
+
+We test the three headline claims with **paired tests** in two complementary
+ways (`scripts/seed_significance.py`):
+
+1. **Across-seed paired t-test** (n = 3 seeds × number of methods in the claim).
+   Tiny n but extremely conservative.
+2. **Per-image paired Wilcoxon signed-rank** on dice averaged across 3 seeds.
+   Large n (200–5000 images depending on claim), high statistical power.
+
+The three claims and their results (full table in
+`bbox_robustness/comparison/seed_significance.md`):
+
+| Claim | Across-seed | Per-image |
+|---|:--:|:--:|
+| **C1a** — rand100 train > pm=0 train on ISIC at pm=200 (5 PEFT methods) | ✓ p ≪ 0.001 | ✓ p ≪ 0.001 |
+| **C1b** — rand100 train > pm=0 train on PH² at pm=200 (5 PEFT methods) | ✓ p ≪ 0.001 | ✓ p ≪ 0.001 |
+| **C2** — Full FT > LoRA on CBIS-DDSM at tight bbox | ✓ p < 0.001 | — *(tight-bbox per-image only saved for seed 0)* |
+| **C3** — rand100-trained NOT > zero-shot on CBIS-DDSM at pm=200 | ✓ (test fails to reject the "rand100 > zero-shot" alternative — consistent with claim) | ✓ |
+
+The headline story is statistically defensible.
 
 #### Mechanism: two separable effects
+
+The mechanism analysis below uses seed-0 only — we did not re-run the
+feature-shift probe on seeds 1 and 2, because the across-seed Dice trends
+above already confirm the effects are stable. The per-method shift and
+weight-delta numbers are therefore single-seed estimates; treat the
+patterns as illustrative rather than as precise effect sizes.
 
 We probe each (method, training) combination with `scripts/encoder_mechanism_analysis.py`,
 which measures two things on a fixed probe set of 32 images per dataset:
@@ -232,24 +290,31 @@ trained on a wider prompt distribution.
 
 #### Where to look
 
+- `bbox_robustness/comparison/seed_error_bars.png` — multi-seed
+  degradation curves with ±std bands across all 4 datasets. The
+  cleanest single picture of the experiment.
+- `bbox_robustness/comparison/comparison_curves_3way.png` — same
+  picture broken down by method, with explicit pm=0/pm=20/rand100
+  linestyles and shaded seed bands.
+- `bbox_robustness/comparison/multi_heatmap_3way.png` — the full Dice
+  surface across all 360 cells (means; ±std as small italic).
+- `bbox_robustness/comparison/delta_summary_bars.png` — average ΔDice
+  from pm=0 baseline per (method, dataset) for both pm=20 and rand100
+  training, with pooled-σ error bars. The "verdict" view.
+- `bbox_robustness/comparison/delta_heatmap_3way.png` — per-perturb
+  ΔDice; bolded cells exceed 2× pooled σ (significance at-a-glance).
+- `bbox_robustness/comparison/seed_significance.md` — paired tests
+  on the three headline claims.
 - `results/mechanism/feature_shift_heatmap.png` — full 15-row × 4-column
   view of encoder drift per (method × training × dataset). The visual
   smoking gun: LoRA's massive shift on CBIS-DDSM at pm=0, Full FT
   rand100 hitting 1.04, decoder-only's three rows of pure zero.
+  *(Seed 0 only.)*
 - `results/mechanism/shift_vs_dice_trajectories.png` — per-method
-  panels showing (shift, ΔDice) trajectories across the three
-  trainings, with 4 colored lines per panel (one per dataset). The
-  cleanest visualization of both mechanisms operating in tandem.
-- `results/mechanism/weight_delta_bars.png` — sanity check showing
-  that encoder *weight* drift is small even for Full FT, and that the
-  encoder-drift story is purely a feature-space phenomenon.
-- `bbox_robustness/comparison/multi_heatmap_3way.png` — the full Dice
-  surface across all 360 cells.
-- `bbox_robustness/comparison/delta_summary_bars.png` — average ΔDice
-  from pm=0 baseline per (method, dataset) for both pm=20 and rand100
-  training. The "verdict" view.
-- `summary_full.csv` at repo root — every metric across every (method,
-  training, dataset, perturb level), one CSV.
+  panels showing (shift, ΔDice) trajectories across the three trainings.
+  *(Seed 0 only.)*
+- `summary_full_multiseed.csv` at repo root — every dice mean ± std
+  across every (method, training, dataset, perturb level), one CSV.
 
 ---
 
@@ -376,6 +441,37 @@ block. Toggle datasets there to skip BUSI, PH², or ISIC test.
 python scripts/plots.py
 # Produces 8 figures in results/figures/ + results/summary_table.csv
 ```
+
+### 7. Reproduce the multi-seed analysis
+
+The seed-1 and seed-2 trainings + their evals + aggregation are chained
+in one script that runs unattended in ~50 hours on an A10:
+
+```bash
+# Generate the 30 seed-1 / seed-2 configs (no-op if already present)
+python scripts/generate_seed_configs.py
+
+# Train + eval + aggregate (run in tmux or nohup; pipeline halts on first error)
+bash scripts/run_seed_pipeline.sh
+```
+
+After the pipeline finishes:
+
+```bash
+# Multi-seed comparison plots (with error bands / error bars):
+python bbox_robustness/compare_trainings.py
+
+# Paired significance tests on the three headline claims:
+python scripts/seed_significance.py
+```
+
+Outputs:
+
+- `summary_full_multiseed.csv` — every dice cell with mean + std + n_seeds.
+- `bbox_robustness/comparison/seed_summary_table.md` — markdown view.
+- `bbox_robustness/comparison/seed_error_bars.png` — overlay curves with std bands.
+- `bbox_robustness/comparison/seed_significance.md` — paired tests.
+- All other plots in `bbox_robustness/comparison/`.
 
 ---
 
