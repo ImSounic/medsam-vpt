@@ -312,6 +312,16 @@ def main() -> int:
     seed = args.seed if args.seed is not None else cfg.get("seed", 0)
     set_seed(seed)
 
+    # Speed wins for fixed-shape (1024x1024) training. cudnn benchmark picks the
+    # fastest convolution algorithm per input shape (one-time autotune ~10 sec at
+    # epoch 1, then ~15-25% faster forward+backward forever after). TF32 lets
+    # matmul/conv use TF32 internally on A10/A100 — same training accuracy as
+    # fp32, much faster. Both are no-ops on CPU/MPS so safe to set unconditionally.
+    if torch.cuda.is_available():
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+
     device = get_device()  # auto: cuda > mps > cpu
     method = cfg["method"]
     print(f"[train] device={device} ({device_name(device)}) method={method} seed={seed}")
@@ -351,21 +361,37 @@ def main() -> int:
     )
     print(f"[train] train_n={len(train_ds)} val_n={len(val_ds)} image_size={image_size}")
 
+    # DataLoader speed wins:
+    # - persistent_workers=True : workers stay alive across epochs (saves ~5 sec
+    #   startup per epoch + first-batch lag)
+    # - prefetch_factor=4 : queue 4 batches per worker so GPU never waits on I/O
+    # Only enable when num_workers > 0 (these kwargs are illegal with workers=0).
+    train_nw = cfg["train"].get("num_workers", 8)
+    eval_nw = cfg["eval"].get("num_workers", 8)
+    train_extra = (
+        {"persistent_workers": True, "prefetch_factor": 4} if train_nw > 0 else {}
+    )
+    eval_extra = (
+        {"persistent_workers": True, "prefetch_factor": 4} if eval_nw > 0 else {}
+    )
+
     train_loader = DataLoader(
         train_ds,
         batch_size=cfg["train"]["batch_size"],
         shuffle=True,
-        num_workers=cfg["train"].get("num_workers", 2),
+        num_workers=train_nw,
         collate_fn=isic_collate,
         pin_memory=supports_pin_memory(device),
+        **train_extra,
     )
     val_loader = DataLoader(
         val_ds,
         batch_size=cfg["eval"]["batch_size"],
         shuffle=False,
-        num_workers=cfg["eval"].get("num_workers", 2),
+        num_workers=eval_nw,
         collate_fn=isic_collate,
         pin_memory=supports_pin_memory(device),
+        **eval_extra,
     )
 
     # Optimizer / scheduler

@@ -72,17 +72,17 @@ data:
 
 train:
   batch_size: 1
-  num_workers: 2
+  num_workers: 8              # was 2; bumped to keep GPU fed (PIL decode + resize is CPU-bound)
   epochs: 6
   lr: 5.0e-4
   weight_decay: 0.0
   dice_weight: 0.5
   amp: true
-  cooldown_seconds: 60
+  cooldown_seconds: 0         # was 60; A10 datacenter doesn't need thermal cooldown
 
 eval:
   batch_size: 1
-  num_workers: 2
+  num_workers: 4
 
 cka_regularization:
   enabled: true
@@ -91,7 +91,11 @@ cka_regularization:
   n_isic: 12
   n_busi: 10
   n_cbis: 10
-  encoder_chunk: 16              # micro-batch for probe encoder forward
+  encoder_chunk: 4               # micro-batch for probe encoder forward.
+                                 # 4 fits in 22 GB A10 with checkpointing + split
+                                 # backwards. Larger (8, 16) OOMs because the
+                                 # probe forward graph + per-sample decoder
+                                 # activations push peak over 22 GB.
   use_grad_checkpoint: true      # per-block checkpointing on the probe encoder
   every_n_steps: 4               # compute CKA loss every N steps (lambda is
                                  # internally multiplied by N so cumulative
