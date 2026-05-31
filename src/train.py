@@ -162,6 +162,7 @@ def train_one_epoch(
         cka_loss_val = 0.0
         if cka_ctx is not None:
             from cka.probe import run_current_probe_forward
+            # Probe forward in fp16 autocast (saves memory + time on encoder)
             with torch.autocast(device_type=_AUTOCAST_DEVICE, enabled=amp):
                 run_current_probe_forward(
                     sam, cka_ctx["probe_batch"],
@@ -169,7 +170,12 @@ def train_one_epoch(
                     encoder_chunk=cka_ctx["encoder_chunk"],
                     use_grad_checkpoint=cka_ctx["use_grad_checkpoint"],
                 )
-                cur_acts = cka_ctx["hook_handle"].stacked()
+            cur_acts = cka_ctx["hook_handle"].stacked()
+
+            # CKA math in fp32 (autocast OFF). Reason: linear CKA computes
+            # ||X^T X||_F^2 which for our feature dims hits ~1e10 — well over
+            # fp16's 65504 max. Without this guard, CKA = NaN on every step.
+            with torch.autocast(device_type=_AUTOCAST_DEVICE, enabled=False):
                 per_layer_losses = []
                 for name, base_act in cka_ctx["base_acts"].items():
                     cur_act = cur_acts.get(name)
