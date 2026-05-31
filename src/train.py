@@ -26,6 +26,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from src.cka import flatten_for_cka, linear_cka
 from src.data.isic import ISIC2018, isic_collate
 from src.device_utils import (
     autocast_device_type,
@@ -109,10 +110,28 @@ def forward_with_prompt(
 
 
 def train_one_epoch(
-    sam, loader, optimizer, scaler, criterion, device, *, encoder_grad: bool, amp: bool
+    sam, loader, optimizer, scaler, criterion, device,
+    *, encoder_grad: bool, amp: bool,
+    cka_ctx: dict | None = None,
 ) -> dict:
+    """Train one epoch.
+
+    cka_ctx, when provided, enables CKA-aware training. It must contain:
+        probe_batch    : dict from build_probe_batch (image, bbox, image_id)
+        base_acts      : dict[layer_name -> Tensor] from cache_base_activations
+        hook_handle    : HookHandle attached to `sam`
+        lambda_cka     : float, overall weight of L_CKA in the total loss
+        layer_weights  : dict[layer_name -> float] per-layer weight inside L_CKA
+
+    With cka_ctx, every training step does an extra forward of the probe batch
+    through the current model, captures activations via the hook_handle, and
+    adds `lambda_cka * sum_l(w_l * (1 - CKA(current[l], base[l])))` to the loss.
+    """
     sam.train()
-    losses, bces, dlosses = [], [], []
+    losses, bces, dlosses, cka_losses = [], [], [], []
+    per_layer_cka_history: dict[str, list[float]] = (
+        {n: [] for n in cka_ctx["base_acts"]} if cka_ctx else {}
+    )
     pbar = tqdm(loader, desc="train", leave=False)
     for batch in pbar:
         images = batch["image"].to(device, non_blocking=True)
@@ -122,28 +141,67 @@ def train_one_epoch(
         optimizer.zero_grad(set_to_none=True)
         with torch.autocast(device_type=_AUTOCAST_DEVICE, enabled=amp):
             logits = forward_with_prompt(sam, images, bboxes, encoder_grad=encoder_grad)
-            loss, parts = criterion(logits, masks)
+            task_loss, parts = criterion(logits, masks)
+
+            # CKA loss term (optional). Computed in same autocast scope so dtypes match.
+            cka_loss_val = 0.0
+            if cka_ctx is not None:
+                from cka.probe import run_current_probe_forward
+                # Forward the probe through the current model — this populates
+                # cka_ctx["hook_handle"].activations[name] for each hooked layer.
+                run_current_probe_forward(sam, cka_ctx["probe_batch"])
+
+                per_layer_losses = []
+                for name, base_act in cka_ctx["base_acts"].items():
+                    cur_act = cka_ctx["hook_handle"].activations.get(name)
+                    if cur_act is None:
+                        # Hook didn't fire for this layer — log and skip.
+                        continue
+                    X = flatten_for_cka(base_act.float())
+                    Y = flatten_for_cka(cur_act.float())
+                    sim = linear_cka(X, Y)
+                    w = float(cka_ctx["layer_weights"].get(name, 1.0))
+                    per_layer_losses.append(w * (1.0 - sim))
+                    per_layer_cka_history[name].append(float(sim.detach().item()))
+                if per_layer_losses:
+                    cka_loss = torch.stack(per_layer_losses).sum()
+                    total_loss = task_loss + float(cka_ctx["lambda_cka"]) * cka_loss
+                    cka_loss_val = float(cka_loss.detach().item())
+                else:
+                    total_loss = task_loss
+            else:
+                total_loss = task_loss
 
         if scaler is not None:
-            scaler.scale(loss).backward()
+            scaler.scale(total_loss).backward()
             scaler.step(optimizer)
             scaler.update()
         else:
-            loss.backward()
+            total_loss.backward()
             optimizer.step()
 
-        losses.append(loss.item())
+        losses.append(total_loss.item())
         bces.append(parts["bce"])
         dlosses.append(parts["dice_loss"])
-        pbar.set_postfix({
-            "loss": f"{loss.item():.3f}",
+        cka_losses.append(cka_loss_val)
+        postfix = {
+            "loss": f"{total_loss.item():.3f}",
             "dice_l": f"{parts['dice_loss']:.3f}",
-        })
-    return {
+        }
+        if cka_ctx is not None:
+            postfix["cka_l"] = f"{cka_loss_val:.3f}"
+        pbar.set_postfix(postfix)
+
+    out = {
         "loss": float(np.mean(losses)),
         "bce": float(np.mean(bces)),
         "dice_loss": float(np.mean(dlosses)),
     }
+    if cka_ctx is not None:
+        out["cka_loss"] = float(np.mean(cka_losses))
+        for name, hist in per_layer_cka_history.items():
+            out[f"cka_{name}"] = float(np.mean(hist)) if hist else float("nan")
+    return out
 
 
 @torch.no_grad()
@@ -278,6 +336,58 @@ def main() -> int:
 
     criterion = DiceBCELoss(dice_weight=float(cfg["train"].get("dice_weight", 0.5)))
 
+    # ------------------------------------------------------------------
+    # Optional: CKA-aware training setup
+    # ------------------------------------------------------------------
+    cka_cfg = cfg.get("cka_regularization") or {}
+    cka_ctx = None
+    if cka_cfg.get("enabled"):
+        from cka.hooks import register_hooks
+        from cka.probe import build_probe_batch, cache_base_activations
+
+        layer_names = list(cka_cfg["hook_layers"])
+        lambda_cka = float(cka_cfg["lambda"])
+        layer_weights = dict(cka_cfg.get("weights") or {})
+        probe_seed = int(cka_cfg.get("probe_seed", 42))
+        n_isic = int(cka_cfg.get("n_isic", 12))
+        n_busi = int(cka_cfg.get("n_busi", 10))
+        n_cbis = int(cka_cfg.get("n_cbis", 10))
+
+        print(f"[train][cka] enabled  lambda={lambda_cka}  layers={layer_names}")
+        print(f"[train][cka] probe: ISIC={n_isic} BUSI={n_busi} CBIS={n_cbis} "
+              f"seed={probe_seed}")
+
+        # Build probe batch on the right device
+        probe_batch = build_probe_batch(
+            repo_root=REPO_ROOT,
+            image_size=image_size,
+            n_isic=n_isic, n_busi=n_busi, n_cbis=n_cbis,
+            probe_seed=probe_seed,
+            device=device,
+        )
+        print(f"[train][cka] probe batch built: {probe_batch['image'].shape}")
+
+        # Cache base MedSAM activations on the probe (one-time, no grad)
+        base_for_probe = load_medsam(ckpt_path, arch=cfg["model"]["arch"], device=device)
+        for p in base_for_probe.parameters():
+            p.requires_grad = False
+        base_acts = cache_base_activations(base_for_probe, probe_batch, layer_names)
+        print(f"[train][cka] base activations cached: "
+              f"{ {n: tuple(a.shape) for n, a in base_acts.items()} }")
+        del base_for_probe  # we only needed it for one forward
+        empty_cache(device)
+
+        # Register hooks on the *current* trainable model
+        hook_handle = register_hooks(sam, layer_names, detach=False)
+
+        cka_ctx = {
+            "probe_batch":   probe_batch,
+            "base_acts":     base_acts,
+            "hook_handle":   hook_handle,
+            "lambda_cka":    lambda_cka,
+            "layer_weights": layer_weights,
+        }
+
     # Output paths
     run_name = cfg["name"]
     run_dir = REPO_ROOT / cfg["output"]["checkpoint_dir"] / run_name
@@ -287,9 +397,14 @@ def main() -> int:
     log_mode = "a" if (args.resume and log_path.exists() and log_path.stat().st_size > 0) else "w"
     log_fh = open(log_path, log_mode, newline="")
     log_w = csv.writer(log_fh)
+    log_header = ["epoch", "train_loss", "train_bce", "train_dice_loss",
+                  "val_dice", "val_iou", "lr", "epoch_s"]
+    if cka_ctx is not None:
+        log_header.append("cka_loss")
+        for name in cka_ctx["base_acts"]:
+            log_header.append(f"cka_{name}")
     if log_mode == "w":
-        log_w.writerow(["epoch", "train_loss", "train_bce", "train_dice_loss",
-                        "val_dice", "val_iou", "lr", "epoch_s"])
+        log_w.writerow(log_header)
 
     reset_peak_memory(device)
 
@@ -328,7 +443,7 @@ def main() -> int:
         t0 = time.time()
         train_stats = train_one_epoch(
             sam, train_loader, optimizer, scaler, criterion, device,
-            encoder_grad=enc_grad, amp=amp,
+            encoder_grad=enc_grad, amp=amp, cka_ctx=cka_ctx,
         )
         # Thermal cooldown between train and val. ViT-B encoder gradient
         # backward at 1024x1024 saturates mobile GPUs; the val pass kicks off
@@ -353,7 +468,7 @@ def main() -> int:
             f"val_dice={val_dice:.4f} val_iou={val_stats['iou_mean']:.4f} "
             f"lr={cur_lr:.2e} t={elapsed:.0f}s"
         )
-        log_w.writerow([
+        row = [
             epoch,
             f"{train_stats['loss']:.4f}",
             f"{train_stats['bce']:.4f}",
@@ -362,7 +477,13 @@ def main() -> int:
             f"{val_stats['iou_mean']:.4f}",
             f"{cur_lr:.2e}",
             f"{elapsed:.0f}",
-        ])
+        ]
+        if cka_ctx is not None:
+            row.append(f"{train_stats.get('cka_loss', 0.0):.4f}")
+            for name in cka_ctx["base_acts"]:
+                v = train_stats.get(f"cka_{name}", float("nan"))
+                row.append(f"{v:.4f}" if v == v else "nan")
+        log_w.writerow(row)
         log_fh.flush()
 
         # Always save latest (with optimizer/scheduler for resume), save best when val improves
@@ -378,6 +499,8 @@ def main() -> int:
         )
 
     log_fh.close()
+    if cka_ctx is not None:
+        cka_ctx["hook_handle"].remove()
     total_min = (time.time() - t_total) / 60
     peak_mb = peak_memory_mb(device)
     print(f"[train] done in {total_min:.1f} min. best val_dice={best_val:.4f} peak={peak_mb:.0f}MB")
