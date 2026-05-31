@@ -137,8 +137,9 @@ def train_one_epoch(
     per_layer_cka_history: dict[str, list[float]] = (
         {n: [] for n in cka_ctx["base_acts"]} if cka_ctx else {}
     )
+    cka_every_n = cka_ctx["every_n_steps"] if cka_ctx else 1
     pbar = tqdm(loader, desc="train", leave=False)
-    for batch in pbar:
+    for step_idx, batch in enumerate(pbar):
         images = batch["image"].to(device, non_blocking=True)
         masks = batch["mask"].to(device, non_blocking=True)
         bboxes = batch["bbox"].to(device, non_blocking=True)
@@ -159,9 +160,16 @@ def train_one_epoch(
         del logits, task_loss
 
         # ---------- CKA: forward + backward (only probe graph alive here) ---
+        # Apply every N steps (default 1). When N > 1, scale lambda by N so
+        # the cumulative gradient over the N-step window matches what every-step
+        # application at the configured lambda would produce. This preserves
+        # the lambda-sweep semantics — sweeping 0.1/1.0/10.0 still tests the
+        # same effective regularization strengths regardless of N.
         cka_loss_val = 0.0
-        if cka_ctx is not None:
+        do_cka_this_step = (cka_ctx is not None) and (step_idx % cka_every_n == 0)
+        if do_cka_this_step:
             from cka.probe import run_current_probe_forward
+            effective_lambda = float(cka_ctx["lambda_cka"]) * cka_every_n
             # Probe forward in fp16 autocast (saves memory + time on encoder)
             with torch.autocast(device_type=_AUTOCAST_DEVICE, enabled=amp):
                 run_current_probe_forward(
@@ -189,7 +197,7 @@ def train_one_epoch(
                     per_layer_cka_history[name].append(float(sim.detach().item()))
                 if per_layer_losses:
                     cka_loss = torch.stack(per_layer_losses).sum()
-                    scaled_cka = float(cka_ctx["lambda_cka"]) * cka_loss
+                    scaled_cka = effective_lambda * cka_loss
                     cka_loss_val = float(cka_loss.detach().item())
                 else:
                     scaled_cka = None
@@ -215,18 +223,21 @@ def train_one_epoch(
             optimizer.step()
 
         total_loss_val = task_loss_val + (
-            float(cka_ctx["lambda_cka"]) * cka_loss_val if cka_ctx else 0.0
+            float(cka_ctx["lambda_cka"]) * cka_loss_val if (cka_ctx and do_cka_this_step) else 0.0
         )
         losses.append(total_loss_val)
         bces.append(parts["bce"])
         dlosses.append(parts["dice_loss"])
-        cka_losses.append(cka_loss_val)
+        if cka_ctx is not None:
+            # Only record CKA value on steps where it was actually computed
+            if do_cka_this_step:
+                cka_losses.append(cka_loss_val)
         postfix = {
             "loss": f"{total_loss_val:.3f}",
             "dice_l": f"{parts['dice_loss']:.3f}",
         }
         if cka_ctx is not None:
-            postfix["cka_l"] = f"{cka_loss_val:.3f}"
+            postfix["cka_l"] = f"{cka_loss_val:.3f}" if do_cka_this_step else "—"
         pbar.set_postfix(postfix)
 
     out = {
@@ -427,6 +438,7 @@ def main() -> int:
             "layer_weights": layer_weights,
             "encoder_chunk": int(cka_cfg.get("encoder_chunk", 16)),
             "use_grad_checkpoint": bool(cka_cfg.get("use_grad_checkpoint", True)),
+            "every_n_steps": int(cka_cfg.get("every_n_steps", 1)),
         }
 
     # Output paths

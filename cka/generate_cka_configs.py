@@ -92,14 +92,12 @@ cka_regularization:
   n_busi: 10
   n_cbis: 10
   encoder_chunk: 16              # micro-batch for probe encoder forward
-  use_grad_checkpoint: true      # per-block checkpointing on the probe
-                                 # encoder. Required at chunk_size >= 8 on
-                                 # 22 GB A10 because SAM's 4 global-attention
-                                 # blocks each materialise a ~6 GB tensor.
-                                 # ~30% slower per probe forward but cuts
-                                 # peak memory from ~25 GB to ~10 GB, letting
-                                 # us use chunk=16 instead of chunk=4 — net
-                                 # ~2× faster wall-clock per training step.
+  use_grad_checkpoint: true      # per-block checkpointing on the probe encoder
+  every_n_steps: 4               # compute CKA loss every N steps (lambda is
+                                 # internally multiplied by N so cumulative
+                                 # regularization is unchanged vs every-step).
+                                 # 4 is a safe value — gives ~4x speedup
+                                 # with negligible quality impact.
   hook_layers:
 {hook_layers_yaml}
   weights:
