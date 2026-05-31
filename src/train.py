@@ -147,15 +147,21 @@ def train_one_epoch(
             cka_loss_val = 0.0
             if cka_ctx is not None:
                 from cka.probe import run_current_probe_forward
-                # Forward the probe through the current model — this populates
-                # cka_ctx["hook_handle"].activations[name] for each hooked layer.
-                run_current_probe_forward(sam, cka_ctx["probe_batch"])
+                # Forward the probe through the current model. Accumulate-mode
+                # hooks are .clear()-ed inside run_current_probe_forward; after
+                # the forward we read .stacked() to get (B_probe, ...) tensors
+                # matching what base_acts contain.
+                run_current_probe_forward(
+                    sam, cka_ctx["probe_batch"],
+                    hook_handle=cka_ctx["hook_handle"],
+                    encoder_chunk=cka_ctx["encoder_chunk"],
+                )
+                cur_acts = cka_ctx["hook_handle"].stacked()
 
                 per_layer_losses = []
                 for name, base_act in cka_ctx["base_acts"].items():
-                    cur_act = cka_ctx["hook_handle"].activations.get(name)
+                    cur_act = cur_acts.get(name)
                     if cur_act is None:
-                        # Hook didn't fire for this layer — log and skip.
                         continue
                     X = flatten_for_cka(base_act.float())
                     Y = flatten_for_cka(cur_act.float())
@@ -377,8 +383,10 @@ def main() -> int:
         del base_for_probe  # we only needed it for one forward
         empty_cache(device)
 
-        # Register hooks on the *current* trainable model
-        hook_handle = register_hooks(sam, layer_names, detach=False)
+        # Register hooks on the *current* trainable model in ACCUMULATE mode —
+        # decoder hooks fire once per probe sample (per-sample loop), so we
+        # must accumulate and stack rather than overwrite.
+        hook_handle = register_hooks(sam, layer_names, detach=False, accumulate=True)
 
         cka_ctx = {
             "probe_batch":   probe_batch,
@@ -386,6 +394,7 @@ def main() -> int:
             "hook_handle":   hook_handle,
             "lambda_cka":    lambda_cka,
             "layer_weights": layer_weights,
+            "encoder_chunk": int(cka_cfg.get("encoder_chunk", 4)),
         }
 
     # Output paths

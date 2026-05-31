@@ -91,9 +91,24 @@ def _normalize_output(name: str, output) -> torch.Tensor:
 class HookHandle:
     """Manages a set of registered forward hooks and exposes their activations.
 
-    After each forward pass on the hooked model, `self.activations[name]` holds
-    the latest captured tensor for that named layer. Tensors are kept in their
-    raw (B, ...) shape — flatten to (B, D) before passing to `linear_cka()`.
+    Two modes (toggled at construction):
+
+    - accumulate=False  : the latest forward pass's activation overwrites the
+                          previous one. Use when the hooked module is called
+                          ONCE per forward (e.g., encoder blocks called on a
+                          batched (B, 3, H, W) input).
+
+    - accumulate=True   : each forward call's activation is appended to a list
+                          per layer. Call `.stacked()` to get the concatenated
+                          (B_total, ...) tensor. Use when the hooked module is
+                          called MULTIPLE times in a per-sample loop (e.g., SAM's
+                          mask_decoder, which is called once per probe image so
+                          its hook fires 32 times for a 32-image probe).
+
+    The accumulate mode is essential for decoder-layer hooks on SAM because the
+    mask decoder is invoked inside a `for i in range(B)` loop, not on a batched
+    input. Without accumulation we'd only see the last sample's activations and
+    CKA would be computed on a 1-image probe.
     """
 
     def __init__(
@@ -101,29 +116,65 @@ class HookHandle:
         sam: Sam,
         layer_names: Iterable[str],
         detach: bool = False,
+        accumulate: bool = False,
     ) -> None:
         self._handles = []
-        self.activations: dict[str, torch.Tensor] = {}
         self._detach = detach
+        self._accumulate = accumulate
+        # In non-accumulate mode: name -> Tensor (last call only).
+        # In accumulate mode:     name -> list[Tensor] (one per call), .stacked() returns concat.
+        self.activations: dict[str, torch.Tensor] = {}
+        self._accum: dict[str, list[torch.Tensor]] = {}
 
         for name in layer_names:
             module = _resolve_module(sam, name)
             handle = module.register_forward_hook(self._make_hook(name))
             self._handles.append(handle)
+            if self._accumulate:
+                self._accum[name] = []
 
     def _make_hook(self, name: str):
-        # Captured-name closure so each hook stores under the right key
         def _hook(_module, _inputs, output):
             t = _normalize_output(name, output)
-            self.activations[name] = t.detach() if self._detach else t
+            t = t.detach() if self._detach else t
+            if self._accumulate:
+                self._accum[name].append(t)
+            else:
+                self.activations[name] = t
         return _hook
 
+    def clear(self) -> None:
+        """Reset accumulators. Call before each fresh forward pass when accumulating."""
+        if self._accumulate:
+            for name in self._accum:
+                self._accum[name].clear()
+        self.activations.clear()
+
+    def stacked(self) -> dict[str, torch.Tensor]:
+        """In accumulate mode, return name -> concatenated tensor (along batch dim).
+
+        Concatenation is along dim 0 so a per-sample loop that calls the hooked
+        module on B individual 1-sample inputs results in a (B, ...) tensor —
+        exactly what we'd have gotten from a single batched forward.
+
+        Raises:
+            RuntimeError if not in accumulate mode (call `.activations` instead).
+        """
+        if not self._accumulate:
+            raise RuntimeError("stacked() requires accumulate=True; use .activations instead")
+        out = {}
+        for name, parts in self._accum.items():
+            if not parts:
+                continue
+            out[name] = torch.cat(parts, dim=0)
+        return out
+
     def remove(self) -> None:
-        """Detach all hooks. Call when training is done or model is being torn down."""
         for h in self._handles:
             h.remove()
         self._handles.clear()
         self.activations.clear()
+        self._accum.clear()
 
     def __enter__(self):
         return self
@@ -136,18 +187,20 @@ def register_hooks(
     sam: Sam,
     layer_names: Iterable[str],
     detach: bool = False,
+    accumulate: bool = False,
 ) -> HookHandle:
     """Register forward hooks on `sam` at the requested layers.
 
     Args:
-        sam: a Sam model (possibly wrapped with VPT/LoRA — those don't affect
-            decoder hooks; encoder hooks resolve through the VPT base when present).
-        layer_names: iterable of names; see `_resolve_module` for the supported set.
-        detach: if True, captured activations are .detach()-ed. Use for the BASE
-            (frozen) model where gradients aren't needed. Keep False for the
-            trainable model so CKA loss can backpropagate through the activations.
+        sam: a Sam model.
+        layer_names: which layers to hook (see `_resolve_module`).
+        detach: True for the frozen BASE model (no grad needed); False for the
+            trainable current model so CKA loss backpropagates.
+        accumulate: True for hooks on per-sample-looped modules (mask_decoder
+            and its sub-layers in SAM's pipeline). Call `.clear()` before each
+            forward pass and `.stacked()` after to read the (B, ...) tensor.
 
     Returns:
-        HookHandle. Hooks remain active until `.remove()` is called.
+        HookHandle. Remember to `.remove()` when done.
     """
-    return HookHandle(sam, layer_names, detach=detach)
+    return HookHandle(sam, layer_names, detach=detach, accumulate=accumulate)

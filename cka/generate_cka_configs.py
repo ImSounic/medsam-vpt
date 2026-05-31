@@ -91,6 +91,9 @@ cka_regularization:
   n_isic: 12
   n_busi: 10
   n_cbis: 10
+  encoder_chunk: 16          # micro-batch size for probe encoder forward
+                             # 16 fits comfortably on a dedicated A10 (22 GB)
+                             # drop to 4 or 8 if sharing the GPU and OOM hits
   hook_layers:
 {hook_layers_yaml}
   weights:

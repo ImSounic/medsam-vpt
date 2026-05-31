@@ -162,42 +162,68 @@ def cache_base_activations(
     base_sam: Sam,
     probe_batch: dict,
     layer_names: Iterable[str],
+    encoder_chunk: int = 4,
 ) -> dict[str, torch.Tensor]:
     """Forward the probe through base MedSAM once, capture activations.
 
-    The captured tensors are detached (no graph) and ready to use as fixed
-    reference targets in the CKA loss for every training step.
+    Uses accumulate-mode hooks so decoder-side activations (which fire once per
+    sample inside the SAM mask_decoder loop) are concatenated into a single
+    (B_probe, ...) tensor matching what a batched forward would have produced.
 
     Args:
         base_sam: frozen base MedSAM (eval mode).
         probe_batch: output of `build_probe_batch`.
-        layer_names: which layers to capture; must match the names used for
-            hooking the trainable model so we compare like-for-like.
+        layer_names: which layers to capture; must match the names hooked on the
+            trainable model so we compare like-for-like.
+        encoder_chunk: micro-batch size for the image encoder forward.
+            Defaults to 4 — keeps peak activation memory near baseline training
+            (batch=1) while reducing the number of encoder forwards. Drop to 2
+            or 1 if you OOM on a shared GPU.
 
     Returns:
-        dict mapping layer_name -> Tensor (batch-first, no grad).
+        dict mapping layer_name -> Tensor (B_probe, ...). No grad.
     """
     base_sam.eval()
-    with register_hooks(base_sam, layer_names, detach=True) as hh:
-        _run_probe_forward(base_sam, probe_batch)
+    with register_hooks(base_sam, layer_names, detach=True, accumulate=True) as hh:
+        _run_probe_forward(base_sam, probe_batch, hook_handle=hh,
+                           encoder_chunk=encoder_chunk)
         # Clone so we don't keep references to internal tensors that might be
         # mutated by later forward passes.
-        return {name: act.clone() for name, act in hh.activations.items()}
+        return {name: act.clone() for name, act in hh.stacked().items()}
 
 
-def _run_probe_forward(sam: Sam, probe_batch: dict) -> None:
+def _run_probe_forward(
+    sam: Sam,
+    probe_batch: dict,
+    *,
+    hook_handle=None,
+    encoder_chunk: int = 4,
+) -> None:
     """Forward pass through the full SAM pipeline on the probe batch.
 
-    Runs image_encoder, then for each image: prompt_encoder + mask_decoder.
-    This matches the per-sample iteration used in `src/train.forward_with_prompt`,
-    so the layer activations captured here exactly correspond to what would be
-    captured during normal training-time forwards.
+    Runs image_encoder in micro-batches of `encoder_chunk` (keeps peak memory
+    bounded), then for each image: prompt_encoder + mask_decoder (per-sample,
+    matching `src/train.forward_with_prompt`'s iteration pattern).
+
+    If `hook_handle` is in accumulate mode, callers must `.clear()` it before
+    calling this function and read `.stacked()` afterwards. We don't call
+    `.clear()` here because the caller controls the lifecycle (e.g., training
+    might want to read accumulated activations *before* the next clear).
     """
     images = probe_batch["image"]
     bboxes = probe_batch["bbox"]
-
-    image_emb = sam.image_encoder(images)
     B = images.shape[0]
+
+    # ---- Image encoder: micro-batched to avoid OOM on shared GPUs ----
+    # 32 images × 1024² needs ~12 GB of encoder activations in one shot. With
+    # encoder_chunk=4 we cap that at ~1.5 GB per chunk and concat the outputs.
+    emb_chunks = []
+    for start in range(0, B, encoder_chunk):
+        chunk = images[start : start + encoder_chunk]
+        emb_chunks.append(sam.image_encoder(chunk))
+    image_emb = torch.cat(emb_chunks, dim=0)  # (B, 256, H/16, W/16)
+
+    # ---- Per-sample prompt encoder + mask decoder ----
     for i in range(B):
         sparse, dense = sam.prompt_encoder(
             points=None,
@@ -213,11 +239,22 @@ def _run_probe_forward(sam: Sam, probe_batch: dict) -> None:
         )
 
 
-def run_current_probe_forward(sam: Sam, probe_batch: dict) -> None:
-    """Forward the probe through the *current* (trainable) model.
+def run_current_probe_forward(
+    sam: Sam,
+    probe_batch: dict,
+    hook_handle=None,
+    encoder_chunk: int = 4,
+) -> None:
+    """Forward the probe through the *current* (trainable) model for CKA.
 
-    Use during training: hooks installed on `sam` will populate their
-    activation dict. The caller is responsible for setting up hooks beforehand
-    and reading from `hook_handle.activations` after this call returns.
+    Caller must pass the same `hook_handle` (in accumulate mode) that was
+    attached to `sam`, and must call `hook_handle.clear()` before each call so
+    the previous step's accumulated activations are discarded.
+
+    After this returns, read `hook_handle.stacked()` to get the (B_probe, ...)
+    activations for CKA computation.
     """
-    _run_probe_forward(sam, probe_batch)
+    if hook_handle is not None:
+        hook_handle.clear()
+    _run_probe_forward(sam, probe_batch, hook_handle=hook_handle,
+                       encoder_chunk=encoder_chunk)
