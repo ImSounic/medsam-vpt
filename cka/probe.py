@@ -43,6 +43,8 @@ import torch
 from PIL import Image
 from segment_anything.modeling import Sam
 
+import torch.utils.checkpoint as cp
+
 from src.data.busi import BUSI
 from src.data.cbis_ddsm import CBISDDSM
 from src.data.isic import ISIC2018, PIXEL_MEAN, PIXEL_STD
@@ -157,6 +159,57 @@ def build_probe_batch(
     }
 
 
+def _encoder_forward_checkpointed(encoder, x: torch.Tensor) -> torch.Tensor:
+    """Equivalent to encoder(x), but with per-block gradient checkpointing.
+
+    Why this exists:
+      The probe forward through the *current* (trainable) model needs to
+      retain activations for backward — so the CKA loss can flow gradients
+      back to the trainable params. SAM's 4 global-attention blocks each
+      materialise a (B*heads x HW x HW) attention tensor; at chunk_size=16
+      and image_size=1024 (HW=4096) that's ~6 GB per block, and across all
+      4 globals it sums to ~25 GB. Plus the train batch + base cache, this
+      OOMs a 22 GB A10.
+
+      Per-block checkpointing drops the cost dramatically: during forward we
+      only save the input to each block (~50 MB at chunk=16, ~600 MB across
+      12 blocks). During backward, PyTorch re-runs one block at a time with
+      grad enabled; peak memory at any moment is one block's activations
+      (~6 GB for a global block at chunk=16). Total peak is then ~7 GB for
+      the encoder, fits comfortably.
+
+      Cost: each encoder backward effectively does the forward twice
+      (~30% more compute), but the much larger chunk size more than makes
+      up for it in wall-clock terms.
+
+    Caveat:
+      Forward hooks registered on encoder *blocks* would fire TWICE — once
+      during forward, once during backward recomputation. Our 9 sweep configs
+      only hook decoder layers (and the decoder runs AFTER the encoder, after
+      checkpointing is done), so this isn't an issue. If you ever add encoder
+      hooks AND use this path, disable checkpointing in train.py.
+
+      Only supports the raw ImageEncoderViT layout (patch_embed -> pos_embed
+      -> blocks -> neck). VPT-wrapped encoders have their own internal
+      gradient_checkpointing flag — toggle that instead, don't call this.
+    """
+    # Handle the unwrapped vs VPT-wrapped encoder
+    if hasattr(encoder, "base") and hasattr(encoder, "_add_prompts"):
+        # VPT wrapper — delegate to its own checkpointing path
+        encoder.gradient_checkpointing = True
+        try:
+            return encoder(x)
+        finally:
+            encoder.gradient_checkpointing = False
+    x = encoder.patch_embed(x)
+    if encoder.pos_embed is not None:
+        x = x + encoder.pos_embed
+    for blk in encoder.blocks:
+        x = cp.checkpoint(blk, x, use_reentrant=False)
+    x = encoder.neck(x.permute(0, 3, 1, 2))
+    return x
+
+
 @torch.no_grad()
 def cache_base_activations(
     base_sam: Sam,
@@ -198,6 +251,7 @@ def _run_probe_forward(
     *,
     hook_handle=None,
     encoder_chunk: int = 4,
+    use_grad_checkpoint: bool = False,
 ) -> None:
     """Forward pass through the full SAM pipeline on the probe batch.
 
@@ -205,22 +259,26 @@ def _run_probe_forward(
     bounded), then for each image: prompt_encoder + mask_decoder (per-sample,
     matching `src/train.forward_with_prompt`'s iteration pattern).
 
+    Set `use_grad_checkpoint=True` for the current (trainable) model probe
+    forward — it enables per-block gradient checkpointing on the encoder,
+    which lets us use a larger encoder_chunk (e.g., 16 instead of 4) without
+    OOM on a 22 GB A10. Leave False for the base-model (no_grad) cache step.
+
     If `hook_handle` is in accumulate mode, callers must `.clear()` it before
-    calling this function and read `.stacked()` afterwards. We don't call
-    `.clear()` here because the caller controls the lifecycle (e.g., training
-    might want to read accumulated activations *before* the next clear).
+    calling this function and read `.stacked()` afterwards.
     """
     images = probe_batch["image"]
     bboxes = probe_batch["bbox"]
     B = images.shape[0]
 
-    # ---- Image encoder: micro-batched to avoid OOM on shared GPUs ----
-    # 32 images × 1024² needs ~12 GB of encoder activations in one shot. With
-    # encoder_chunk=4 we cap that at ~1.5 GB per chunk and concat the outputs.
+    # ---- Image encoder: micro-batched to bound peak activation memory ----
     emb_chunks = []
     for start in range(0, B, encoder_chunk):
         chunk = images[start : start + encoder_chunk]
-        emb_chunks.append(sam.image_encoder(chunk))
+        if use_grad_checkpoint:
+            emb_chunks.append(_encoder_forward_checkpointed(sam.image_encoder, chunk))
+        else:
+            emb_chunks.append(sam.image_encoder(chunk))
     image_emb = torch.cat(emb_chunks, dim=0)  # (B, 256, H/16, W/16)
 
     # ---- Per-sample prompt encoder + mask decoder ----
@@ -244,17 +302,22 @@ def run_current_probe_forward(
     probe_batch: dict,
     hook_handle=None,
     encoder_chunk: int = 4,
+    use_grad_checkpoint: bool = True,
 ) -> None:
     """Forward the probe through the *current* (trainable) model for CKA.
 
-    Caller must pass the same `hook_handle` (in accumulate mode) that was
-    attached to `sam`, and must call `hook_handle.clear()` before each call so
-    the previous step's accumulated activations are discarded.
+    Defaults to use_grad_checkpoint=True because the autograd graph from
+    the probe encoder forward is what blows out memory on A10. With
+    checkpointing on, encoder_chunk can safely be 16 (or larger) on a
+    22 GB dedicated GPU.
 
-    After this returns, read `hook_handle.stacked()` to get the (B_probe, ...)
-    activations for CKA computation.
+    Caller must pass the same `hook_handle` (in accumulate mode) attached to
+    `sam`. We `.clear()` it here before the forward so the previous step's
+    activations are discarded; after this returns, read `hook_handle.stacked()`
+    to get the (B_probe, ...) activations for CKA computation.
     """
     if hook_handle is not None:
         hook_handle.clear()
     _run_probe_forward(sam, probe_batch, hook_handle=hook_handle,
-                       encoder_chunk=encoder_chunk)
+                       encoder_chunk=encoder_chunk,
+                       use_grad_checkpoint=use_grad_checkpoint)

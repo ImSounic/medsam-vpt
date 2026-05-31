@@ -155,6 +155,7 @@ def train_one_epoch(
                     sam, cka_ctx["probe_batch"],
                     hook_handle=cka_ctx["hook_handle"],
                     encoder_chunk=cka_ctx["encoder_chunk"],
+                    use_grad_checkpoint=cka_ctx["use_grad_checkpoint"],
                 )
                 cur_acts = cka_ctx["hook_handle"].stacked()
 
@@ -394,7 +395,8 @@ def main() -> int:
             "hook_handle":   hook_handle,
             "lambda_cka":    lambda_cka,
             "layer_weights": layer_weights,
-            "encoder_chunk": int(cka_cfg.get("encoder_chunk", 4)),
+            "encoder_chunk": int(cka_cfg.get("encoder_chunk", 16)),
+            "use_grad_checkpoint": bool(cka_cfg.get("use_grad_checkpoint", True)),
         }
 
     # Output paths

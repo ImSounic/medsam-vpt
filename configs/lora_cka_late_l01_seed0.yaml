@@ -43,9 +43,15 @@ cka_regularization:
   n_isic: 12
   n_busi: 10
   n_cbis: 10
-  encoder_chunk: 16          # micro-batch size for probe encoder forward
-                             # 16 fits comfortably on a dedicated A10 (22 GB)
-                             # drop to 4 or 8 if sharing the GPU and OOM hits
+  encoder_chunk: 16              # micro-batch for probe encoder forward
+  use_grad_checkpoint: true      # per-block checkpointing on the probe
+                                 # encoder. Required at chunk_size >= 8 on
+                                 # 22 GB A10 because SAM's 4 global-attention
+                                 # blocks each materialise a ~6 GB tensor.
+                                 # ~30% slower per probe forward but cuts
+                                 # peak memory from ~25 GB to ~10 GB, letting
+                                 # us use chunk=16 instead of chunk=4 — net
+                                 # ~2× faster wall-clock per training step.
   hook_layers:
     - decoder_upscaling
     - decoder_iou_head
