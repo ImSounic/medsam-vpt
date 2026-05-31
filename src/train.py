@@ -122,10 +122,15 @@ def train_one_epoch(
         hook_handle    : HookHandle attached to `sam`
         lambda_cka     : float, overall weight of L_CKA in the total loss
         layer_weights  : dict[layer_name -> float] per-layer weight inside L_CKA
+        encoder_chunk  : int, probe encoder micro-batch size
+        use_grad_checkpoint : bool, per-block checkpointing on probe encoder
 
-    With cka_ctx, every training step does an extra forward of the probe batch
-    through the current model, captures activations via the hook_handle, and
-    adds `lambda_cka * sum_l(w_l * (1 - CKA(current[l], base[l])))` to the loss.
+    Memory-saving design: task and CKA backward are done SEPARATELY, with the
+    task graph freed before the probe forward starts. Mathematically equivalent
+    to one combined `(task + λ·cka).backward()` (gradients are linear), but
+    halves peak memory because we never hold both autograd graphs alive at the
+    same time. Without this split, the combined graph OOMs a 22 GB A10 even
+    at chunk=4 with checkpointing.
     """
     sam.train()
     losses, bces, dlosses, cka_losses = [], [], [], []
@@ -139,18 +144,25 @@ def train_one_epoch(
         bboxes = batch["bbox"].to(device, non_blocking=True)
 
         optimizer.zero_grad(set_to_none=True)
+
+        # ---------- Task: forward + backward (frees train graph) ----------
         with torch.autocast(device_type=_AUTOCAST_DEVICE, enabled=amp):
             logits = forward_with_prompt(sam, images, bboxes, encoder_grad=encoder_grad)
             task_loss, parts = criterion(logits, masks)
 
-            # CKA loss term (optional). Computed in same autocast scope so dtypes match.
-            cka_loss_val = 0.0
-            if cka_ctx is not None:
-                from cka.probe import run_current_probe_forward
-                # Forward the probe through the current model. Accumulate-mode
-                # hooks are .clear()-ed inside run_current_probe_forward; after
-                # the forward we read .stacked() to get (B_probe, ...) tensors
-                # matching what base_acts contain.
+        task_loss_val = float(task_loss.detach().item())
+        if scaler is not None:
+            scaler.scale(task_loss).backward()
+        else:
+            task_loss.backward()
+        # Drop refs so train autograd graph can be reclaimed before probe forward
+        del logits, task_loss
+
+        # ---------- CKA: forward + backward (only probe graph alive here) ---
+        cka_loss_val = 0.0
+        if cka_ctx is not None:
+            from cka.probe import run_current_probe_forward
+            with torch.autocast(device_type=_AUTOCAST_DEVICE, enabled=amp):
                 run_current_probe_forward(
                     sam, cka_ctx["probe_batch"],
                     hook_handle=cka_ctx["hook_handle"],
@@ -158,7 +170,6 @@ def train_one_epoch(
                     use_grad_checkpoint=cka_ctx["use_grad_checkpoint"],
                 )
                 cur_acts = cka_ctx["hook_handle"].stacked()
-
                 per_layer_losses = []
                 for name, base_act in cka_ctx["base_acts"].items():
                     cur_act = cur_acts.get(name)
@@ -172,27 +183,40 @@ def train_one_epoch(
                     per_layer_cka_history[name].append(float(sim.detach().item()))
                 if per_layer_losses:
                     cka_loss = torch.stack(per_layer_losses).sum()
-                    total_loss = task_loss + float(cka_ctx["lambda_cka"]) * cka_loss
+                    scaled_cka = float(cka_ctx["lambda_cka"]) * cka_loss
                     cka_loss_val = float(cka_loss.detach().item())
                 else:
-                    total_loss = task_loss
-            else:
-                total_loss = task_loss
+                    scaled_cka = None
 
+            if scaled_cka is not None:
+                if scaler is not None:
+                    scaler.scale(scaled_cka).backward()
+                else:
+                    scaled_cka.backward()
+
+            # Free the accumulated hook tensors (they pinned the probe graph
+            # until backward; after backward they're orphaned and can go).
+            cka_ctx["hook_handle"].clear()
+            del cur_acts
+            if scaled_cka is not None:
+                del cka_loss, scaled_cka
+
+        # ---------- Optimizer step (sees grads from BOTH backwards) ----------
         if scaler is not None:
-            scaler.scale(total_loss).backward()
             scaler.step(optimizer)
             scaler.update()
         else:
-            total_loss.backward()
             optimizer.step()
 
-        losses.append(total_loss.item())
+        total_loss_val = task_loss_val + (
+            float(cka_ctx["lambda_cka"]) * cka_loss_val if cka_ctx else 0.0
+        )
+        losses.append(total_loss_val)
         bces.append(parts["bce"])
         dlosses.append(parts["dice_loss"])
         cka_losses.append(cka_loss_val)
         postfix = {
-            "loss": f"{total_loss.item():.3f}",
+            "loss": f"{total_loss_val:.3f}",
             "dice_l": f"{parts['dice_loss']:.3f}",
         }
         if cka_ctx is not None:
