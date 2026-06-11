@@ -19,7 +19,7 @@ with open(backup, newline='') as f:
             dropped.append(row); continue
         kept.append(row)
 
-# Keep only the most recent row per (method, dataset, seed)
+# Keep most recent row per (method, dataset, seed)
 latest = {}
 for r in kept:
     k = (r['run_name'], r['dataset'], r['seed'])

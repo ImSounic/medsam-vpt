@@ -1,22 +1,12 @@
 """Compare CKA sweep results across two probe compositions.
 
-Inputs (all under cka/results/):
-    runs_cka_early.csv         — JL sweep, original probe (12 ISIC + 10 BUSI + 10 CBIS), early position
-    runs_cka_mid.csv           — JL sweep, original probe, mid position
-    runs_cka_late.csv          — JL sweep, original probe, late position
-    runs_cka_oodonly_early.csv — HPC sweep, OOD-only probe (0 ISIC + 16 BUSI + 16 CBIS), early position
-    runs_cka_oodonly_mid.csv   — HPC sweep, OOD-only probe, mid position
-    runs_cka_oodonly_late.csv  — HPC sweep, OOD-only probe, late position
-    ../../results/runs.csv     — baseline LoRA (seed 0, no CKA) for delta calculations
+Inputs under cka/results/: runs_cka_{early,mid,late}.csv (original probe,
+12 ISIC + 10 BUSI + 10 CBIS) and runs_cka_oodonly_*.csv (OOD-only probe,
+0 ISIC + 16 BUSI + 16 CBIS), plus ../../results/runs.csv for the no-CKA baseline.
 
-Outputs (cka/figures/):
-    cka_probe_compare_grid.png            — 2 rows × 4 cols: probe × dataset, x=λ, lines=position
-    cka_probe_compare_heatmap.png         — 4 rows × 2 cols: dataset × probe, heatmap of dice
-    cka_probe_compare_delta_heatmap.png   — same layout, Δ vs baseline (red=worse, blue=better)
-    cka_probe_compare_best_bars.png       — bar chart of best (position, λ) per dataset per probe
-    cka_probe_compare_tradeoff.png        — ID vs CBIS-DDSM scatter, both probes overlaid
-    cka_probe_compare_summary.md          — markdown table of best configs
-    cka_probe_compare_summary.csv         — long-form summary CSV
+Outputs to cka/figures/: lambda grid, dice heatmap, delta-vs-baseline heatmap,
+best-config bars, ID-vs-CBIS tradeoff, robustness bars. Plus
+cka_probe_compare_summary.{csv,md}.
 """
 from __future__ import annotations
 
@@ -34,11 +24,11 @@ BASELINE_CSV = REPO_ROOT / "results" / "runs.csv"
 
 POSITIONS = ("early", "mid", "late")
 LAMBDAS = {"01": 0.1, "1": 1.0, "10": 10.0}
-LAMBDA_LABELS = {0.1: "λ=0.1", 1.0: "λ=1.0", 10.0: "λ=10.0"}
+LAMBDA_LABELS = {0.1: "lambda=0.1", 1.0: "lambda=1.0", 10.0: "lambda=10.0"}
 DATASETS = ["isic2018_test", "ph2", "busi", "cbis_ddsm"]
 DATASET_LABELS = {
     "isic2018_test": "ISIC 2018 (ID)",
-    "ph2":           "PH² (near-OOD)",
+    "ph2":           "PH2 (near-OOD)",
     "busi":          "BUSI (far-OOD US)",
     "cbis_ddsm":     "CBIS-DDSM (far-OOD X-ray)",
 }
@@ -50,16 +40,11 @@ PROBE_LABELS = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Loading
-# ---------------------------------------------------------------------------
-
 def parse_run_name(run_name: str) -> tuple[str, str, float] | None:
     """Extract (probe, position, lambda) from a run_name.
 
-    Examples:
-        lora_cka_early_l01_seed0          -> ("original", "early", 0.1)
-        lora_cka_oodonly_early_l1_seed0   -> ("oodonly",  "early", 1.0)
+    lora_cka_early_l01_seed0        -> ("original", "early", 0.1)
+    lora_cka_oodonly_early_l1_seed0 -> ("oodonly",  "early", 1.0)
     """
     m = re.match(r"^lora_cka_(oodonly_)?(early|mid|late)_l([0-9]+)_seed\d+$", run_name)
     if not m:
@@ -73,16 +58,16 @@ def parse_run_name(run_name: str) -> tuple[str, str, float] | None:
 
 
 def load_all_results() -> pd.DataFrame:
-    """Combine all 6 CSVs (2 probes × 3 positions) into one long-form DataFrame.
+    """Combine all 6 CSVs (2 probes x 3 positions) into one long-form DataFrame.
 
-    Returns columns: probe, position, lambda, dataset, dice, iou, hd95
+    Columns: probe, position, lambda, dataset, dice, iou, hd95.
     """
     frames = []
     for position in POSITIONS:
         for probe_tag, suffix in (("original", ""), ("oodonly", "_oodonly")):
             csv_path = RESULTS_DIR / f"runs_cka{suffix}_{position}.csv"
             if not csv_path.exists():
-                print(f"[compare] WARNING: {csv_path} missing — skipping ({probe_tag}, {position})")
+                print(f"[compare] WARNING: {csv_path} missing, skipping ({probe_tag}, {position})")
                 continue
             df = pd.read_csv(csv_path)
             df = df[df["method"] == "lora"].copy()
@@ -103,7 +88,7 @@ def load_all_results() -> pd.DataFrame:
 def load_baseline() -> dict[str, float]:
     """Baseline LoRA dice per dataset (seed 0, no CKA)."""
     if not BASELINE_CSV.exists():
-        # Fall back to the multiseed averages we know by heart
+        # Fall back to known multiseed averages
         return {
             "isic2018_test": 0.9556,
             "ph2":           0.9570,
@@ -123,7 +108,7 @@ def load_baseline() -> dict[str, float]:
 
 
 def load_zero_shot() -> dict[str, float]:
-    """Zero-shot dice per dataset (from any CKA results CSV — same number everywhere)."""
+    """Zero-shot dice per dataset (from any CKA results CSV, same everywhere)."""
     for f in RESULTS_DIR.glob("runs_cka_*.csv"):
         df = pd.read_csv(f)
         zs = df[df["method"] == "zero_shot"]
@@ -133,12 +118,9 @@ def load_zero_shot() -> dict[str, float]:
     return {ds: float("nan") for ds in DATASETS}
 
 
-# ---------------------------------------------------------------------------
-# Plot 1: 2×4 grid — probe rows × dataset cols, x=λ, lines=position
-# ---------------------------------------------------------------------------
-
+# Plot 1: 2x4 grid, probe rows x dataset cols, x=lambda, lines=position
 def plot_lambda_grid(df: pd.DataFrame, baseline: dict, zero_shot: dict, out_path: Path) -> None:
-    """4 datasets × 2 probes: 8 panels showing dice vs λ for each position."""
+    """4 datasets x 2 probes: 8 panels showing dice vs lambda for each position."""
     fig, axes = plt.subplots(2, 4, figsize=(20, 9), sharex=True)
     probes = ("original", "oodonly")
     lams = sorted(LAMBDAS.values())
@@ -170,7 +152,7 @@ def plot_lambda_grid(df: pd.DataFrame, baseline: dict, zero_shot: dict, out_path
             ax.set_xticks(lams)
             ax.set_xticklabels([f"{lam:g}" for lam in lams])
             if row_i == 1:
-                ax.set_xlabel("λ (CKA loss weight)")
+                ax.set_xlabel("lambda (CKA loss weight)")
             if col_i == 0:
                 ax.set_ylabel(f"{PROBE_LABELS[probe].split(' (')[0]}\nDice", fontweight="bold")
             if row_i == 0:
@@ -179,7 +161,7 @@ def plot_lambda_grid(df: pd.DataFrame, baseline: dict, zero_shot: dict, out_path
             if row_i == 0 and col_i == 0:
                 ax.legend(loc="best", fontsize=8, frameon=True)
 
-    fig.suptitle("CKA-aware LoRA: Dice vs λ for each (probe, position)",
+    fig.suptitle("CKA-aware LoRA: Dice vs lambda for each (probe, position)",
                  fontsize=14, y=1.00)
     fig.tight_layout()
     fig.savefig(out_path, dpi=130, bbox_inches="tight")
@@ -187,12 +169,9 @@ def plot_lambda_grid(df: pd.DataFrame, baseline: dict, zero_shot: dict, out_path
     print(f"[compare] wrote {out_path}")
 
 
-# ---------------------------------------------------------------------------
-# Plot 2: Δ-vs-baseline heatmap, 4 datasets × 2 probes
-# ---------------------------------------------------------------------------
-
+# Plot 2: delta-vs-baseline heatmap, 4 datasets x 2 probes
 def plot_delta_heatmaps(df: pd.DataFrame, baseline: dict, out_path: Path) -> None:
-    """For each (probe, dataset), a 3×3 grid (position × λ) of ΔDice vs baseline LoRA."""
+    """For each (probe, dataset), a 3x3 grid (position x lambda) of delta Dice vs baseline."""
     fig, axes = plt.subplots(4, 2, figsize=(11, 16))
     probes = ("original", "oodonly")
     lams = sorted(LAMBDAS.values())
@@ -212,7 +191,7 @@ def plot_delta_heatmaps(df: pd.DataFrame, baseline: dict, out_path: Path) -> Non
             im = ax.imshow(grid, cmap="RdBu_r", vmin=-DELTA_MAX, vmax=DELTA_MAX,
                            aspect="auto")
             ax.set_xticks(range(len(lams)))
-            ax.set_xticklabels([f"λ={lam:g}" for lam in lams])
+            ax.set_xticklabels([f"lambda={lam:g}" for lam in lams])
             ax.set_yticks(range(len(POSITIONS)))
             ax.set_yticklabels(POSITIONS)
             if row_i == 0:
@@ -230,18 +209,15 @@ def plot_delta_heatmaps(df: pd.DataFrame, baseline: dict, out_path: Path) -> Non
                             ha="center", va="center", color=txt_color, fontsize=10)
 
     cbar = fig.colorbar(im, ax=axes.ravel().tolist(), fraction=0.025, pad=0.02)
-    cbar.set_label("ΔDice vs baseline LoRA")
-    fig.suptitle("CKA-aware LoRA: ΔDice from baseline by (position, λ, probe)",
+    cbar.set_label("Delta Dice vs baseline LoRA")
+    fig.suptitle("CKA-aware LoRA: Delta Dice from baseline by (position, lambda, probe)",
                  fontsize=13, y=0.995)
     fig.savefig(out_path, dpi=130, bbox_inches="tight")
     plt.close(fig)
     print(f"[compare] wrote {out_path}")
 
 
-# ---------------------------------------------------------------------------
-# Plot 3: Best-config bar chart per dataset, per probe
-# ---------------------------------------------------------------------------
-
+# Plot 3: best-config bar chart per dataset, per probe
 def plot_best_bars(df: pd.DataFrame, baseline: dict, zero_shot: dict, out_path: Path) -> None:
     """For each dataset, show baseline LoRA, zero-shot, best original-probe CKA, best OOD-only CKA."""
     fig, axes = plt.subplots(1, 4, figsize=(18, 6), sharey=False)
@@ -270,7 +246,7 @@ def plot_best_bars(df: pd.DataFrame, baseline: dict, zero_shot: dict, out_path: 
             if sub.empty:
                 continue
             best = sub.loc[sub["dice"].idxmax()]
-            label = f"{probe}\n{best['position']}_λ{best['lambda']:g}"
+            label = f"{probe}\n{best['position']}_l{best['lambda']:g}"
             cats.append(label)
             vals.append(float(best["dice"]))
             cols.append(PROBE_COLORS[probe])
@@ -295,10 +271,7 @@ def plot_best_bars(df: pd.DataFrame, baseline: dict, zero_shot: dict, out_path: 
     print(f"[compare] wrote {out_path}")
 
 
-# ---------------------------------------------------------------------------
 # Plot 4: ID vs CBIS-DDSM trade-off scatter
-# ---------------------------------------------------------------------------
-
 def plot_tradeoff(df: pd.DataFrame, baseline: dict, zero_shot: dict, out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(10, 9))
 
@@ -317,7 +290,7 @@ def plot_tradeoff(df: pd.DataFrame, baseline: dict, zero_shot: dict, out_path: P
                 ax.scatter(x, y, marker=marker, s=180,
                            color=PROBE_COLORS[probe],
                            edgecolors="black", linewidth=1.2, alpha=0.9, zorder=5)
-                # Label point with λ
+                # Label point with lambda
                 ax.annotate(f"{position[0]}{lam:g}",
                             (x, y), xytext=(7, -4),
                             textcoords="offset points", fontsize=7)
@@ -367,17 +340,13 @@ def plot_tradeoff(df: pd.DataFrame, baseline: dict, zero_shot: dict, out_path: P
     print(f"[compare] wrote {out_path}")
 
 
-# ---------------------------------------------------------------------------
-# Plot 5: Side-by-side dice heatmap (4 rows × 2 cols)
-# ---------------------------------------------------------------------------
-
+# Plot 5: side-by-side dice heatmap (4 rows x 2 cols)
 def plot_dice_heatmaps(df: pd.DataFrame, out_path: Path) -> None:
     fig, axes = plt.subplots(4, 2, figsize=(11, 16))
     lams = sorted(LAMBDAS.values())
 
-    # Pick min/max separately per dataset for better color contrast within each dataset
+    # Per-dataset min/max for better color contrast within each dataset
     for row_i, ds in enumerate(DATASETS):
-        # Get range for this dataset across both probes
         sub_ds = df[df["dataset"] == ds]
         if sub_ds.empty:
             continue
@@ -396,7 +365,7 @@ def plot_dice_heatmaps(df: pd.DataFrame, out_path: Path) -> None:
 
             im = ax.imshow(grid, cmap="RdYlGn", vmin=v_min, vmax=v_max, aspect="auto")
             ax.set_xticks(range(len(lams)))
-            ax.set_xticklabels([f"λ={lam:g}" for lam in lams])
+            ax.set_xticklabels([f"lambda={lam:g}" for lam in lams])
             ax.set_yticks(range(len(POSITIONS)))
             ax.set_yticklabels(POSITIONS)
             if row_i == 0:
@@ -411,10 +380,10 @@ def plot_dice_heatmaps(df: pd.DataFrame, out_path: Path) -> None:
                     ax.text(j, i, f"{val:.3f}",
                             ha="center", va="center",
                             color="black", fontsize=10)
-            # Tiny per-dataset colorbar
+            # Per-dataset colorbar
             fig.colorbar(im, ax=ax, fraction=0.04, pad=0.02)
 
-    fig.suptitle("CKA-aware LoRA Dice heatmap by (position, λ, probe)\n"
+    fig.suptitle("CKA-aware LoRA Dice heatmap by (position, lambda, probe)\n"
                  "Color range scaled per dataset",
                  fontsize=13, y=0.995)
     fig.tight_layout()
@@ -423,10 +392,7 @@ def plot_dice_heatmaps(df: pd.DataFrame, out_path: Path) -> None:
     print(f"[compare] wrote {out_path}")
 
 
-# ---------------------------------------------------------------------------
-# Plot 6: Robustness rank chart — count wins / catastrophes per probe
-# ---------------------------------------------------------------------------
-
+# Plot 6: robustness rank chart, count wins / catastrophes per probe
 def plot_robustness(df: pd.DataFrame, baseline: dict, out_path: Path) -> None:
     """Counts per probe of: configs that beat baseline, that lose >0.1, that lose >0.3."""
     cats = ["beat_baseline", "loss<0.1", "loss>0.1", "loss>0.3"]
@@ -461,8 +427,8 @@ def plot_robustness(df: pd.DataFrame, baseline: dict, out_path: Path) -> None:
                     ha="center", va="bottom", fontsize=10)
     ax.set_xticks(x)
     ax.set_xticklabels(cat_labels, fontsize=9)
-    ax.set_ylabel("# (config × dataset) cells out of 36 (9 configs × 4 datasets)")
-    ax.set_title("Robustness comparison: how many cells fall in each ΔDice bucket?",
+    ax.set_ylabel("# (config x dataset) cells out of 36 (9 configs x 4 datasets)")
+    ax.set_title("Robustness comparison: how many cells fall in each Delta Dice bucket?",
                  fontsize=11)
     ax.legend()
     ax.grid(axis="y", alpha=0.3)
@@ -471,10 +437,6 @@ def plot_robustness(df: pd.DataFrame, baseline: dict, out_path: Path) -> None:
     plt.close(fig)
     print(f"[compare] wrote {out_path}")
 
-
-# ---------------------------------------------------------------------------
-# Summary CSV + MD
-# ---------------------------------------------------------------------------
 
 def write_summary(df: pd.DataFrame, baseline: dict, zero_shot: dict,
                   csv_path: Path, md_path: Path) -> None:
@@ -497,13 +459,13 @@ def write_summary(df: pd.DataFrame, baseline: dict, zero_shot: dict,
     print(f"[compare] wrote {csv_path}")
 
     # Markdown: best per (probe, dataset)
-    lines = ["# CKA probe comparison — best (position, λ) per dataset per probe\n"]
+    lines = ["# CKA probe comparison: best (position, lambda) per dataset per probe\n"]
     lines.append("Baseline LoRA dice (seed 0, no CKA): "
                  + ", ".join(f"{ds}={baseline.get(ds, float('nan')):.4f}" for ds in DATASETS) + "\n")
     lines.append("Zero-shot dice: "
                  + ", ".join(f"{ds}={zero_shot.get(ds, float('nan')):.4f}" for ds in DATASETS) + "\n")
     lines.append("\n## Best CKA config per dataset per probe\n")
-    lines.append("| Dataset | Probe | Best position | Best λ | Dice | Δ vs baseline |")
+    lines.append("| Dataset | Probe | Best position | Best lambda | Dice | Delta vs baseline |")
     lines.append("|---|---|---|---:|---:|---:|")
     for ds in DATASETS:
         for probe in ("original", "oodonly"):
@@ -512,11 +474,11 @@ def write_summary(df: pd.DataFrame, baseline: dict, zero_shot: dict,
                 continue
             best = sub.loc[sub["dice"].idxmax()]
             delta = best["delta_vs_baseline"] if best["delta_vs_baseline"] != "" else float("nan")
-            delta_str = f"{delta:+.4f}" if not (isinstance(delta, float) and np.isnan(delta)) else "—"
+            delta_str = f"{delta:+.4f}" if not (isinstance(delta, float) and np.isnan(delta)) else "-"
             lines.append(f"| {DATASET_LABELS[ds]} | {probe} | {best['position']} | "
                          f"{best['lambda']:g} | {best['dice']:.4f} | {delta_str} |")
 
-    lines.append("\n## Robustness — how many of 36 (config × dataset) cells fall in each bucket?\n")
+    lines.append("\n## Robustness: how many of 36 (config x dataset) cells fall in each bucket?\n")
     lines.append("| Bucket | Original probe | OOD-only probe |")
     lines.append("|---|---:|---:|")
     counts = {p: {"beat": 0, "mild": 0, "mod": 0, "cat": 0} for p in ("original", "oodonly")}
@@ -529,10 +491,10 @@ def write_summary(df: pd.DataFrame, baseline: dict, zero_shot: dict,
         elif d >= -0.1: counts[p]["mild"] += 1
         elif d >= -0.3: counts[p]["mod"] += 1
         else: counts[p]["cat"] += 1
-    for label, key in (("Beats baseline (Δ ≥ 0)", "beat"),
-                        ("Mild loss (0 > Δ ≥ -0.1)", "mild"),
-                        ("Moderate loss (-0.1 > Δ ≥ -0.3)", "mod"),
-                        ("Catastrophic (Δ < -0.3)", "cat")):
+    for label, key in (("Beats baseline (delta >= 0)", "beat"),
+                        ("Mild loss (0 > delta >= -0.1)", "mild"),
+                        ("Moderate loss (-0.1 > delta >= -0.3)", "mod"),
+                        ("Catastrophic (delta < -0.3)", "cat")):
         lines.append(f"| {label} | {counts['original'][key]} | {counts['oodonly'][key]} |")
 
     with open(md_path, "w") as f:
@@ -546,8 +508,8 @@ def main() -> int:
     baseline = load_baseline()
     zero_shot = load_zero_shot()
     print(f"[compare] loaded {len(df)} rows from "
-          f"{df['probe'].nunique()} probes × {df['position'].nunique()} positions × "
-          f"{df['lambda'].nunique()} lambdas × {df['dataset'].nunique()} datasets")
+          f"{df['probe'].nunique()} probes x {df['position'].nunique()} positions x "
+          f"{df['lambda'].nunique()} lambdas x {df['dataset'].nunique()} datasets")
     print(f"[compare] baseline: {baseline}")
     print(f"[compare] zero-shot: {zero_shot}")
 

@@ -1,15 +1,8 @@
 """Compare bbox-robustness curves between pm=0 trained and pm=20 trained models.
 
-Reads:
-  bbox_robustness/results/runs.csv         (pm=0 trained, bbox perturbations)
-  bbox_robustness/results_pm20/runs.csv    (pm=20 trained, bbox perturbations)
-  ../results/runs.csv                      (pm=0 trained, tight bbox baseline)
-  ../results/runs_pm20.csv                 (pm=20 trained, tight bbox baseline)
-
-Produces (in bbox_robustness/results_pm20/figures/):
-  comparison_curves.png       — overlay curves (solid pm=0, dashed pm=20)
-  delta_heatmap.png           — method x (dataset, perturb) heatmap of pm=20 - pm=0 Dice
-  comparison_summary.csv      — pivoted summary table with both versions side-by-side
+Reads runs.csv from results/ and results_pm20/ plus the two tight-bbox
+baselines in ../results/. Writes overlay curves, a pm=20 minus pm=0 delta
+heatmap, and a side-by-side summary CSV into results_pm20/figures/.
 """
 from __future__ import annotations
 
@@ -63,10 +56,6 @@ DATASET_ORDER = ["isic2018_test", "ph2", "busi", "cbis_ddsm"]
 PERTURBS = [0, 20, 50, 100, 200]
 
 
-# ---------------------------------------------------------------------------
-# Load + combine all four CSVs into one long-form DataFrame
-# ---------------------------------------------------------------------------
-
 def load_combined() -> pd.DataFrame:
     """Return DataFrame with columns: method, dataset, perturb_max_px, dice_mean, training."""
     frames = []
@@ -79,7 +68,7 @@ def load_combined() -> pd.DataFrame:
     bbox20["training"] = "pm=20"
     frames.append(bbox20[["method", "dataset", "perturb_max_px", "dice_mean", "training"]])
 
-    # Tight baselines (perturb=0)
+    # Tight baselines at perturb=0
     tight0 = pd.read_csv(PM0_TIGHT_CSV)
     tight0["perturb_max_px"] = 0
     tight0["training"] = "pm=0"
@@ -92,18 +81,14 @@ def load_combined() -> pd.DataFrame:
 
     df = pd.concat(frames, ignore_index=True)
 
-    # Drop duplicates (zero_shot appears in both bbox_robustness/results_pm20 + tight,
-    # but values are identical — drop_duplicates handles it).
+    # zero_shot appears in both the pm20 bbox CSV and the tight baseline with
+    # identical values; drop the dupes.
     df = df.drop_duplicates(
         subset=["method", "dataset", "perturb_max_px", "training"],
         keep="first",
     )
     return df
 
-
-# ---------------------------------------------------------------------------
-# Plot 1: overlay degradation curves
-# ---------------------------------------------------------------------------
 
 def plot_overlay_curves(df: pd.DataFrame, out_path: Path) -> None:
     fig, axes = plt.subplots(2, 2, figsize=(14, 10), sharex=True)
@@ -113,7 +98,7 @@ def plot_overlay_curves(df: pd.DataFrame, out_path: Path) -> None:
         sub = df[df["dataset"] == ds]
         for m in METHOD_ORDER:
             if m == "zero_shot":
-                # Zero-shot is unchanged between trainings; plot it once
+                # zero_shot is the same model in both trainings; plot once
                 sub_m = sub[(sub["method"] == m) & (sub["training"] == "pm=0")].sort_values("perturb_max_px")
                 if not sub_m.empty:
                     ax.plot(sub_m["perturb_max_px"], sub_m["dice_mean"],
@@ -121,14 +106,14 @@ def plot_overlay_curves(df: pd.DataFrame, out_path: Path) -> None:
                              label=METHOD_LABELS[m], zorder=1)
                 continue
 
-            # pm=0 trained — solid line
+            # pm=0 trained: solid line
             sub_0 = sub[(sub["method"] == m) & (sub["training"] == "pm=0")].sort_values("perturb_max_px")
             if not sub_0.empty:
                 ax.plot(sub_0["perturb_max_px"], sub_0["dice_mean"],
                          marker="o", linewidth=2, color=METHOD_COLORS[m],
                          label=f"{METHOD_LABELS[m]} (pm=0 trained)", zorder=2)
 
-            # pm=20 trained — dashed line, same colour
+            # pm=20 trained: dashed line, same colour
             sub_20 = sub[(sub["method"] == m) & (sub["training"] == "pm=20")].sort_values("perturb_max_px")
             if not sub_20.empty:
                 ax.plot(sub_20["perturb_max_px"], sub_20["dice_mean"],
@@ -142,7 +127,7 @@ def plot_overlay_curves(df: pd.DataFrame, out_path: Path) -> None:
         ax.grid(alpha=0.3)
         ax.set_xticks(PERTURBS)
 
-    # Single shared legend — methods only (not the training distinction, which is in linestyle)
+    # Shared legend: methods only; training shows up in the linestyle
     method_handles = [
         plt.Line2D([], [], color=METHOD_COLORS[m], marker="o", linewidth=2,
                     label=METHOD_LABELS[m])
@@ -168,13 +153,8 @@ def plot_overlay_curves(df: pd.DataFrame, out_path: Path) -> None:
     print(f"[compare] wrote {out_path}")
 
 
-# ---------------------------------------------------------------------------
-# Plot 2: delta heatmap
-# ---------------------------------------------------------------------------
-
 def plot_delta_heatmap(df: pd.DataFrame, out_path: Path) -> None:
-    """Heatmap of Dice(pm=20 trained) − Dice(pm=0 trained), one panel per dataset."""
-    # Pivot to wide form, compute delta
+    """Heatmap of Dice(pm=20 trained) minus Dice(pm=0 trained), one panel per dataset."""
     wide = df.pivot_table(
         index=["method", "perturb_max_px"],
         columns="training",
@@ -183,7 +163,7 @@ def plot_delta_heatmap(df: pd.DataFrame, out_path: Path) -> None:
     ).reset_index()
     wide["delta"] = wide["pm=20"] - wide["pm=0"]
 
-    # Skip zero_shot (no delta meaningful — identical model)
+    # zero_shot is the same model in both, so its delta is meaningless
     wide = wide[wide["method"] != "zero_shot"]
 
     fig, axes = plt.subplots(1, len(DATASET_ORDER), figsize=(20, 5), sharey=True)
@@ -192,13 +172,12 @@ def plot_delta_heatmap(df: pd.DataFrame, out_path: Path) -> None:
     delta_max = 0.25
 
     for ax, ds in zip(axes, DATASET_ORDER):
-        # Filter out CBIS edge — but we still need it. Use bbox CSVs directly per-dataset
         sub_df = df[df["dataset"] == ds]
         pivot = sub_df.pivot_table(
             index="method", columns=["training", "perturb_max_px"],
             values="dice_mean", aggfunc="first",
         )
-        # Compute delta = pm=20 minus pm=0
+        # delta = pm=20 minus pm=0
         delta_grid = pd.DataFrame(index=[m for m in METHOD_ORDER if m != "zero_shot"],
                                    columns=PERTURBS, dtype=float)
         for m in delta_grid.index:
@@ -219,20 +198,18 @@ def plot_delta_heatmap(df: pd.DataFrame, out_path: Path) -> None:
         ax.set_yticklabels([METHOD_LABELS[m] for m in delta_grid.index])
         ax.set_xlabel("Eval bbox max expansion (px)")
         ax.set_title(DATASET_LABELS.get(ds, ds))
-        # Cell-value annotations
         for i in range(delta_grid.shape[0]):
             for j in range(delta_grid.shape[1]):
                 val = float(delta_grid.values[i, j])
                 if np.isnan(val):
                     continue
-                # Bigger text for larger magnitude (small visual emphasis)
                 ax.text(j, i, f"{val:+.3f}",
                          ha="center", va="center",
                          color="white" if abs(val) > 0.15 else "black",
                          fontsize=8)
         if ax is axes[-1]:
             cbar = fig.colorbar(im, ax=ax, fraction=0.04, pad=0.02)
-            cbar.set_label("ΔDice (pm=20 trained  −  pm=0 trained)\nblue = pm=20 worse, red = pm=20 better")
+            cbar.set_label("delta Dice (pm=20 trained - pm=0 trained)\nblue = pm=20 worse, red = pm=20 better")
 
     fig.suptitle(
         "Effect of pm=20 jitter training on bbox-robustness Dice  "
@@ -245,10 +222,6 @@ def plot_delta_heatmap(df: pd.DataFrame, out_path: Path) -> None:
     print(f"[compare] wrote {out_path}")
 
 
-# ---------------------------------------------------------------------------
-# Summary CSV
-# ---------------------------------------------------------------------------
-
 def write_summary_csv(df: pd.DataFrame, out_path: Path) -> None:
     """Long-form summary: method, dataset, perturb_max_px, dice_pm0, dice_pm20, delta."""
     wide = df.pivot_table(
@@ -260,13 +233,11 @@ def write_summary_csv(df: pd.DataFrame, out_path: Path) -> None:
     if "pm=0" in wide.columns:
         wide = wide.rename(columns={"pm=0": "dice_pm0", "pm=20": "dice_pm20"})
         wide["delta"] = wide["dice_pm20"] - wide["dice_pm0"]
-    # Order rows
     method_idx = {m: i for i, m in enumerate(METHOD_ORDER)}
     dataset_idx = {d: i for i, d in enumerate(DATASET_ORDER)}
     wide["_m"] = wide["method"].map(method_idx)
     wide["_d"] = wide["dataset"].map(dataset_idx)
     wide = wide.sort_values(["_m", "_d", "perturb_max_px"]).drop(columns=["_m", "_d"])
-    # Round
     for c in ("dice_pm0", "dice_pm20", "delta"):
         if c in wide.columns:
             wide[c] = wide[c].astype(float).round(4)
@@ -274,16 +245,12 @@ def write_summary_csv(df: pd.DataFrame, out_path: Path) -> None:
     print(f"[compare] wrote {out_path}")
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
 def main() -> int:
     OUT_FIG_DIR.mkdir(parents=True, exist_ok=True)
     df = load_combined()
     print(f"[compare] loaded {len(df)} rows "
-          f"({df['method'].nunique()} methods × {df['dataset'].nunique()} datasets × "
-          f"{df['perturb_max_px'].nunique()} perturb levels × {df['training'].nunique()} trainings)")
+          f"({df['method'].nunique()} methods x {df['dataset'].nunique()} datasets x "
+          f"{df['perturb_max_px'].nunique()} perturb levels x {df['training'].nunique()} trainings)")
 
     plot_overlay_curves(df, OUT_FIG_DIR / "comparison_curves.png")
     plot_delta_heatmap(df, OUT_FIG_DIR / "delta_heatmap.png")

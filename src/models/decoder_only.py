@@ -1,11 +1,9 @@
 """Decoder-only fine-tuning.
 
-Image encoder frozen. Prompt encoder frozen (it processes deterministic
-bbox inputs and adapting it would mean ~6k extra params with negligible
-benefit). Mask decoder trainable.
-
-This is MedSAM's documented fine-tuning recipe and the strongest
-non-PEFT baseline for the comparison.
+Image encoder and prompt encoder frozen, mask decoder trainable. Prompt
+encoder stays frozen because it only handles deterministic bbox inputs
+(~6k params, no benefit). This is MedSAM's documented recipe and the
+strongest non-PEFT baseline here.
 """
 from __future__ import annotations
 

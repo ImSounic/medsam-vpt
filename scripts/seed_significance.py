@@ -1,31 +1,16 @@
-"""Paired significance tests for the three claims that matter most.
+"""Paired significance tests for the three headline claims.
 
-We have:
-  - 3 seeds (0, 1, 2) trained for each of 15 (method × training) combos.
-  - Per-image dice CSVs at every perturb level > 0, for every seed.
-  - Aggregated per-seed dice means (one number per cell, 3 seeds) for all cells.
+Inputs: 3 seeds x 15 (method x training) cells, with per-seed dice means and
+per-image dice CSVs at every perturb > 0.
 
-This script computes two complementary statistics for each claim:
+Two tests per claim:
+  (A) Across-seed paired t-test on per-seed means (n=3). Low power, but the
+      p<0.05 threshold needs mean diff > ~2.92 sigma, a strong effect.
+  (B) Per-image paired Wilcoxon signed-rank on dice averaged across the 3
+      seeds. Large n (200-1000 images), so it has the power (A) lacks.
 
-  (A) Across-seed paired t-test on per-seed dice means (n=3).
-       Tiny sample size; we report the t-statistic, one-sided p-value, and
-       the mean ± std of the per-seed differences. With 3 seeds the test
-       has very low power but its rejection threshold (p<0.05) corresponds
-       to mean diff > ~2.92 σ, which is a meaningfully strong effect.
-
-  (B) Per-image paired Wilcoxon signed-rank on dice values, pooled across
-       the 3 seeds (so each image contributes one number per condition,
-       averaged over seeds). Large n (200–1000 images), so this test
-       has the statistical power that (A) lacks.
-
-We test three claims; for each one we report whether (A) and/or (B)
-reject the null hypothesis in favour of the claim.
-
-Outputs:
-  bbox_robustness/comparison/seed_significance.md  — markdown report
-  bbox_robustness/comparison/seed_significance.csv — same data, tabular
-
-Run after `scripts/aggregate_seeds.py` has produced `summary_full_multiseed.csv`.
+Outputs the markdown + CSV reports to bbox_robustness/comparison/.
+Run after scripts/aggregate_seeds.py produces summary_full_multiseed.csv.
 """
 from __future__ import annotations
 
@@ -45,10 +30,7 @@ OUT_CSV = OUT_DIR / "seed_significance.csv"
 
 SEEDS = (0, 1, 2)
 
-# ----------------------------------------------------------------------------
-# Source CSV paths — mirrors scripts/aggregate_seeds.py
-# ----------------------------------------------------------------------------
-
+# Source CSV paths, mirrors scripts/aggregate_seeds.py
 def tight_csv_for_seed(seed: int, training: str) -> Path:
     suffix = {"pm=0": "", "pm=20": "_pm20", "rand100": "_rand100"}[training]
     if seed == 0:
@@ -170,7 +152,7 @@ def run_paired_t_seeds(diffs: list[float], greater_is_better: bool) -> tuple[flo
 
 def run_paired_wilcoxon(a: pd.Series, b: pd.Series,
                         greater_is_better: bool) -> tuple[int, float, float, float]:
-    """One-sided Wilcoxon signed-rank on per-image dice (a − b > 0).
+    """One-sided Wilcoxon signed-rank on per-image dice (a - b > 0).
     Returns (n, W, one-sided p, median diff)."""
     common = a.index.intersection(b.index)
     diff = (a.loc[common] - b.loc[common]).dropna()
@@ -184,13 +166,10 @@ def run_paired_wilcoxon(a: pd.Series, b: pd.Series,
         return len(diff), float("nan"), float("nan"), float(diff.median())
 
 
-# ----------------------------------------------------------------------------
-# The three claims
-# ----------------------------------------------------------------------------
-
-# Each claim is: condition A is "better" than condition B (on the specified cell).
-# We test diff = (A - B) > 0 (greater_is_better=True), one-sided.
-# For "≥" claims we test diff >= 0 by checking diff < 0 is not rejected (less, two-sided NS).
+# The three claims.
+# Each claim: condition A is "better" than B on the given cell. We test
+# diff = (A - B) > 0 (greater_is_better=True), one-sided. For ">=" claims we
+# check that diff < 0 is not rejected.
 
 CLAIM_DEFINITIONS = [
     {
@@ -215,7 +194,7 @@ CLAIM_DEFINITIONS = [
     },
     {
         "name": "C1b-ph2",
-        "description": "Across all 5 PEFT methods, **rand100 training > pm=0 training on PH² at pm=200**.",
+        "description": "Across all 5 PEFT methods, **rand100 training > pm=0 training on PH2 at pm=200**.",
         "cells": [
             ("decoder_only", "rand100", "ph2", 200),
             ("vpt_shallow",  "rand100", "ph2", 200),
@@ -234,19 +213,19 @@ CLAIM_DEFINITIONS = [
     },
     {
         "name": "C2-cbis",
-        "description": "**Full FT > LoRA on CBIS-DDSM tight bbox (pm=0)** "
-                       "— Full FT keeps far-OOD modality transfer that LoRA loses.",
+        "description": "**Full FT > LoRA on CBIS-DDSM tight bbox (pm=0)**, "
+                       "Full FT keeps far-OOD modality transfer that LoRA loses.",
         "cells":         [("full_ft", "pm=0", "cbis_ddsm", 0)],
         "baseline_cells": [("lora",    "pm=0", "cbis_ddsm", 0)],
         "greater_is_better": True,
     },
     {
         "name": "C3-cbis-zeroshot-ge-rand100",
-        "description": "**Zero-shot ≥ rand100-trained on CBIS-DDSM at pm=200** "
+        "description": "**Zero-shot >= rand100-trained on CBIS-DDSM at pm=200** "
                        "(averaged across 5 PEFT methods). Tests that "
                        "rand100-trained methods do NOT beat zero-shot here.",
-        # Trick: test that (rand100 - zero_shot) > 0 — if this is rejected (p≥0.05)
-        # then zero_shot ≥ rand100 is consistent with the data.
+        # Test (rand100 - zero_shot) > 0; if rejected (p>=0.05) then
+        # zero_shot >= rand100 is consistent with the data.
         "cells": [
             ("decoder_only", "rand100", "cbis_ddsm", 200),
             ("vpt_shallow",  "rand100", "cbis_ddsm", 200),
@@ -262,13 +241,13 @@ CLAIM_DEFINITIONS = [
             ("zero_shot", "pm=0", "cbis_ddsm", 200),
         ],
         "greater_is_better": False,  # we WANT this to fail (rand100 NOT > zero_shot)
-        "invert_for_pass": True,     # for reporting: "passes" if p ≥ 0.05 in the greater direction
+        "invert_for_pass": True,     # passes if p >= 0.05 in the greater direction
     },
 ]
 
 
 def evaluate_claim(claim: dict) -> ClaimResult:
-    # ----- across-seed test -----
+    # across-seed test
     diffs = []
     for cell, base in zip(claim["cells"], claim["baseline_cells"]):
         m_a, t_a, ds_a, p_a = cell
@@ -280,19 +259,19 @@ def evaluate_claim(claim: dict) -> ClaimResult:
             diffs.append(a_means[i] - b_means[i])
 
     if claim.get("invert_for_pass", False):
-        # We want to TEST greater_is_better=True in the direction (a - b > 0)
-        # and have it FAIL — i.e. data does not show a > b.
+        # Test greater_is_better=True (a - b > 0) and expect it to fail, i.e.
+        # the data does not show a > b.
         seed_t, seed_p = run_paired_t_seeds(diffs, greater_is_better=True)
         pass_seed = (seed_p >= 0.05) if not np.isnan(seed_p) else None
     else:
         seed_t, seed_p = run_paired_t_seeds(diffs, greater_is_better=claim["greater_is_better"])
         pass_seed = (seed_p < 0.05) if not np.isnan(seed_p) else None
 
-    # ----- per-image test -----
+    # per-image test
     all_a, all_b = [], []
     for cell, base in zip(claim["cells"], claim["baseline_cells"]):
         if cell[3] == 0:
-            # tight bbox — only seed-0 per-image data exists, skip per-image
+            # tight bbox: only seed-0 per-image data exists, skip per-image
             continue
         sa = per_image_seed_avg(*cell)
         sb = per_image_seed_avg(*base)
@@ -305,9 +284,8 @@ def evaluate_claim(claim: dict) -> ClaimResult:
     if all_a:
         a_pool = pd.concat(all_a)
         b_pool = pd.concat(all_b)
-        # Re-index to common positions (pd.concat preserves duplicate image_ids
-        # across the 5 PEFT methods, which is fine — each row is a distinct
-        # (image, method) pair).
+        # pd.concat keeps duplicate image_ids across the 5 PEFT methods, which
+        # is fine: each row is a distinct (image, method) pair.
         if claim.get("invert_for_pass", False):
             n_img, w_stat, img_p, med = run_paired_wilcoxon(a_pool, b_pool, greater_is_better=True)
             pass_image = (img_p >= 0.05) if not np.isnan(img_p) else None
@@ -333,10 +311,6 @@ def evaluate_claim(claim: dict) -> ClaimResult:
     )
 
 
-# ----------------------------------------------------------------------------
-# Reporting
-# ----------------------------------------------------------------------------
-
 def write_markdown(results: list[ClaimResult], out_path: Path) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
@@ -346,9 +320,9 @@ def write_markdown(results: list[ClaimResult], out_path: Path) -> None:
         "",
         "  * **(A) Across-seed paired t-test** on per-seed dice means "
         "(n = number of (method, seed) pairs contributing to the claim). "
-        "Tests one-sided H₁: mean (a − b) > 0 (or < 0 where the claim is a "
+        "Tests one-sided H1: mean (a - b) > 0 (or < 0 where the claim is a "
         "negative). Reported as `t_stat`, `p_one_sided`, and the empirical "
-        "mean ± std of the diffs.",
+        "mean +/- std of the diffs.",
         "",
         "  * **(B) Per-image paired Wilcoxon signed-rank** on dice values "
         "averaged across 3 seeds. n = number of unique (image, method) pairs. "
@@ -356,42 +330,42 @@ def write_markdown(results: list[ClaimResult], out_path: Path) -> None:
         "n=3 sanity check.",
         "",
         "A claim **passes** when the relevant test rejects the null at p < 0.05. "
-        "For claim C3 (a negative claim — rand100 does NOT beat zero-shot on "
+        "For claim C3 (a negative claim: rand100 does NOT beat zero-shot on "
         "CBIS-DDSM), it passes when the test in the opposite direction fails "
-        "to reject (p ≥ 0.05).",
+        "to reject (p >= 0.05).",
         "",
-        "| Claim | seed n | mean±std diff | seed t | seed p (1-sided) | seed pass | img n | Wilcoxon W | img p | img median diff | img pass |",
+        "| Claim | seed n | mean+/-std diff | seed t | seed p (1-sided) | seed pass | img n | Wilcoxon W | img p | img median diff | img pass |",
         "|---|---:|---|---:|---:|:--:|---:|---:|---:|---:|:--:|",
     ]
     for r in results:
         diffs_arr = np.asarray(r.seed_diffs, dtype=float)
         mean_diff = diffs_arr.mean() if diffs_arr.size else float("nan")
         std_diff = diffs_arr.std(ddof=1) if diffs_arr.size > 1 else float("nan")
-        ms = f"{mean_diff:+.4f} ± {std_diff:.4f}" if not np.isnan(mean_diff) else "—"
-        seed_t = f"{r.seed_t:+.3f}" if r.seed_t is not None and not np.isnan(r.seed_t) else "—"
-        seed_p = f"{r.seed_p_one_sided:.4f}" if r.seed_p_one_sided is not None and not np.isnan(r.seed_p_one_sided) else "—"
-        seed_ok = "✓" if r.pass_seed else ("✗" if r.pass_seed is False else "—")
+        ms = f"{mean_diff:+.4f} +/- {std_diff:.4f}" if not np.isnan(mean_diff) else "-"
+        seed_t = f"{r.seed_t:+.3f}" if r.seed_t is not None and not np.isnan(r.seed_t) else "-"
+        seed_p = f"{r.seed_p_one_sided:.4f}" if r.seed_p_one_sided is not None and not np.isnan(r.seed_p_one_sided) else "-"
+        seed_ok = "PASS" if r.pass_seed else ("FAIL" if r.pass_seed is False else "-")
         if r.image_n is not None:
             img_n = str(r.image_n)
-            img_w = f"{r.image_w:.0f}" if r.image_w is not None and not np.isnan(r.image_w) else "—"
-            img_p = f"{r.image_p_one_sided:.2e}" if r.image_p_one_sided is not None and not np.isnan(r.image_p_one_sided) else "—"
-            img_md = f"{r.image_median_diff:+.4f}" if r.image_median_diff is not None else "—"
-            img_ok = "✓" if r.pass_image else ("✗" if r.pass_image is False else "—")
+            img_w = f"{r.image_w:.0f}" if r.image_w is not None and not np.isnan(r.image_w) else "-"
+            img_p = f"{r.image_p_one_sided:.2e}" if r.image_p_one_sided is not None and not np.isnan(r.image_p_one_sided) else "-"
+            img_md = f"{r.image_median_diff:+.4f}" if r.image_median_diff is not None else "-"
+            img_ok = "PASS" if r.pass_image else ("FAIL" if r.pass_image is False else "-")
         else:
-            img_n = img_w = img_p = img_md = img_ok = "—"
+            img_n = img_w = img_p = img_md = img_ok = "-"
         lines.append(f"| **{r.name}** | {len(r.seed_diffs)} | {ms} | {seed_t} | {seed_p} | {seed_ok} | {img_n} | {img_w} | {img_p} | {img_md} | {img_ok} |")
     lines.append("")
     lines.append("### Claim descriptions")
     lines.append("")
     for r in results:
-        lines.append(f"- **{r.name}** — {r.description}")
+        lines.append(f"- **{r.name}**: {r.description}")
     lines.append("")
     lines.append("### Reading the table")
     lines.append("")
-    lines.append("- For C1a/C1b/C2: we expect both `seed pass` and `img pass` to be ✓.")
-    lines.append("- For C3: we expect both to be ✓, meaning the data does NOT support "
-                 "'rand100 > zero_shot on CBIS-DDSM at pm=200' — consistent with the "
-                 "claim 'zero_shot ≥ rand100'.")
+    lines.append("- For C1a/C1b/C2: we expect both `seed pass` and `img pass` to be PASS.")
+    lines.append("- For C3: we expect both to be PASS, meaning the data does NOT support "
+                 "'rand100 > zero_shot on CBIS-DDSM at pm=200', consistent with the "
+                 "claim 'zero_shot >= rand100'.")
     lines.append("")
     with open(out_path, "w") as f:
         f.write("\n".join(lines))

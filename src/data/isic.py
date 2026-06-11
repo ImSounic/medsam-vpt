@@ -1,15 +1,8 @@
 """ISIC 2018 Task 1 (Lesion Boundary Segmentation) dataset.
 
-Each item returns:
-    image      : torch.float32, (3, H, W), normalised to ImageNet stats
-    mask       : torch.uint8,   (H, W),    0 = background, 1 = lesion
-    bbox       : torch.float32, (4,),      [x1, y1, x2, y2] in (image_size) coords
-    image_id   : str — base filename without extension
-    orig_size  : (H_orig, W_orig) tuple — for resizing predictions back
-
-The bbox is derived from the ground-truth mask. During training we'll
-optionally jitter it to simulate noisy prompts; for zero-shot eval we use
-the tight box.
+Item dict: image (3,H,W float32, ImageNet-normalised), mask (H,W uint8, 0/1),
+bbox (4, float32 [x1,y1,x2,y2] in image_size coords), image_id, orig_size (H,W).
+bbox comes from the GT mask; jittered during training, tight box at eval.
 """
 from __future__ import annotations
 
@@ -21,7 +14,7 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 
-# MedSAM was trained with ImageNet-style normalisation.
+# MedSAM uses ImageNet-style normalisation.
 PIXEL_MEAN = torch.tensor([123.675, 116.28, 103.53]).view(3, 1, 1)
 PIXEL_STD = torch.tensor([58.395, 57.12, 57.375]).view(3, 1, 1)
 
@@ -31,19 +24,12 @@ def _bbox_from_mask(
     perturb_px: int = 0,
     random_perturb: bool = False,
 ) -> np.ndarray:
-    """Tight bounding box around mask>0, optionally perturbed.
+    """Tight bbox around mask>0, optionally perturbed. Returns [x1,y1,x2,y2]
+    inclusive in mask coords; full image if mask is empty.
 
-    Args:
-        mask: 2-D uint8 array, values >0 = foreground.
-        perturb_px: max ± displacement per corner, in px. 0 = exact tight box.
-        random_perturb: if True, each call first samples `actual_px` from
-            uniform [0, perturb_px], then uses that as the corner-level bound.
-            Models a wide prompt-quality distribution rather than a single
-            fixed noise level — matches SAM/MedSAM pretraining style.
-            If False (default), each call uses perturb_px directly.
-
-    Returns [x1, y1, x2, y2] (inclusive) in mask's coordinate frame.
-    Falls back to the full image if the mask is empty.
+    perturb_px: max +/- displacement per corner (0 = exact tight box).
+    random_perturb: if True, sample actual magnitude from uniform [0, perturb_px]
+        per call (wide prompt-quality distribution); if False, use perturb_px directly.
     """
     ys, xs = np.where(mask > 0)
     if len(xs) == 0:
@@ -67,15 +53,9 @@ def _bbox_from_mask(
 class ISIC2018(Dataset):
     """ISIC 2018 Task 1 segmentation dataset.
 
-    Args:
-        root: dataset root containing {split}_images and {split}_masks subdirs.
-        split: one of "train", "val", "test".
-        image_size: square size to resize to (e.g. 1024 for native MedSAM).
-        bbox_perturb_pixels: max pixel jitter on bbox prompts (0 = exact).
-        random_perturb: if True, each __getitem__ samples its actual perturb
-            magnitude from uniform [0, bbox_perturb_pixels] before applying
-            corner-level jitter. Use for training models that need to be
-            robust across the full prompt-quality spectrum.
+    root has {split}_images and {split}_masks subdirs. split in train/val/test.
+    image_size resize target (1024 for native MedSAM). bbox_perturb_pixels = max
+    jitter (0 = exact). random_perturb: sample jitter magnitude per item (training).
     """
 
     def __init__(
@@ -106,7 +86,7 @@ class ISIC2018(Dataset):
         self.items: list[tuple[Path, Path, str]] = []
         missing = 0
         for img_path in img_files:
-            stem = img_path.stem  # e.g. "ISIC_0000000"
+            stem = img_path.stem
             msk_path = msk_dir / f"{stem}_segmentation.png"
             if not msk_path.exists():
                 missing += 1
@@ -134,14 +114,12 @@ class ISIC2018(Dataset):
         img_np = np.asarray(img_pil, dtype=np.float32)  # (H, W, 3) in [0, 255]
         msk_np = (np.asarray(msk_pil, dtype=np.uint8) > 127).astype(np.uint8)
 
-        # Bbox in resized-image coordinates
         bbox = _bbox_from_mask(
             msk_np,
             perturb_px=self.bbox_perturb_pixels,
             random_perturb=self.random_perturb,
         )
 
-        # Image to tensor (C, H, W), normalise.
         img_tensor = torch.from_numpy(img_np).permute(2, 0, 1).contiguous()
         img_tensor = (img_tensor - PIXEL_MEAN) / PIXEL_STD
 
@@ -155,7 +133,7 @@ class ISIC2018(Dataset):
 
 
 def isic_collate(batch: list[dict]) -> dict:
-    """Custom collate that keeps lists for variable-length / metadata fields."""
+    """Collate that keeps metadata fields as lists."""
     out = {
         "image": torch.stack([b["image"] for b in batch]),
         "mask": torch.stack([b["mask"] for b in batch]),

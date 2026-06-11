@@ -1,4 +1,4 @@
-# CKA probe comparison — best (position, λ) per dataset per probe
+# CKA probe comparison: best (position, λ) per dataset per probe
 
 Baseline LoRA dice (seed 0, no CKA): isic2018_test=0.9545, ph2=0.9557, busi=0.7775, cbis_ddsm=0.4979
 
@@ -18,7 +18,7 @@ Zero-shot dice: isic2018_test=0.9072, ph2=0.9054, busi=0.8234, cbis_ddsm=0.6924
 | CBIS-DDSM (far-OOD X-ray) | original | late | 1 | 0.5498 | +0.0519 |
 | CBIS-DDSM (far-OOD X-ray) | oodonly | late | 10 | 0.5360 | +0.0381 |
 
-## Robustness — how many of 36 (config × dataset) cells fall in each bucket?
+## Robustness: how many of 36 (config × dataset) cells fall in each bucket?
 
 | Bucket | Original probe | OOD-only probe |
 |---|---:|---:|

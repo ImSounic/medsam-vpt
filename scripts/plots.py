@@ -1,19 +1,10 @@
 """Generate report figures + summary tables from results/runs.csv.
 
-Run:
-    python scripts/plots.py
+Outputs 8 PNGs (300 dpi) to results/figures/ and results/summary_table.csv:
+  1 dice per dataset, 2 pareto ID vs OOD, 3 drift gap, 4 HD95 split,
+  5 ID vs OOD scatter, 6 drift curves, 7 rank reversal, 8 summary heatmap.
 
-Outputs to results/figures/ (300 dpi PNG) and results/summary_table.csv.
-
-Figures produced:
-  1_dice_per_dataset.png          — 3 sub-panels (ISIC | PH² | BUSI); zoomed bars
-  2_pareto_id_vs_ood.png          — 2 sub-panels (ID Dice vs params | OOD Dice vs params)
-  3_drift_gap.png                 — bar chart, value-labelled, log-style for visibility
-  4_hd95_split.png                — 2 panels (skin domain | ultrasound domain) at native scales
-  5_id_vs_ood_scatter.png         — 2 panels (ISIC vs PH² | ISIC vs BUSI) with y=x reference
-  6_drift_curves.png              — line plot, no error bars (handled in fig 1)
-  7_rank_reversal.png             — bumps chart showing method ranks across datasets
-  8_summary_heatmap.png           — methods × datasets × Dice heatmap with cell labels
+Run: python scripts/plots.py
 """
 from __future__ import annotations
 
@@ -52,18 +43,14 @@ METHOD_COLORS = {
 DATASETS = ["isic2018_test", "ph2", "busi", "cbis_ddsm"]
 DATASET_LABELS = {
     "isic2018_test": "ISIC (ID)",
-    "ph2":           "PH² (near-OOD)",
+    "ph2":           "PH2 (near-OOD)",
     "busi":          "BUSI (far-OOD)",
     "cbis_ddsm":     "CBIS-DDSM (far-OOD)",
 }
 
-# Save figures at 300 dpi for paper-quality output
 DPI = 300
 
 
-# ----------------------------------------------------------------------------
-# Data loading
-# ----------------------------------------------------------------------------
 def load_data() -> pd.DataFrame:
     """Latest non-quick row per (method, dataset)."""
     df = pd.read_csv(RUNS_CSV)
@@ -83,9 +70,7 @@ def get(df, method, dataset, col):
     return np.nan if row.empty else row[col].iloc[0]
 
 
-# ----------------------------------------------------------------------------
-# Figure 1 — 3-panel Dice per dataset, zoomed per-panel y-axes, value labels
-# ----------------------------------------------------------------------------
+# Figure 1: Dice per dataset, zoomed per-panel y-axes, value labels
 def plot_dice_per_dataset(df: pd.DataFrame, out_path: Path) -> None:
     fig, axes = plt.subplots(1, len(DATASETS), figsize=(6 * len(DATASETS), 5.5))
     method_names = [METHOD_LABELS[m] for m in METHODS]
@@ -104,7 +89,7 @@ def plot_dice_per_dataset(df: pd.DataFrame, out_path: Path) -> None:
                 continue
             ax.text(
                 bar.get_x() + bar.get_width() / 2, val + 0.005,
-                f"{val:.3f}\n±{std:.3f}",
+                f"{val:.3f}\n+/-{std:.3f}",
                 ha="center", va="bottom", fontsize=8.5,
             )
         # Auto y-axis: use the data range with some padding
@@ -124,9 +109,7 @@ def plot_dice_per_dataset(df: pd.DataFrame, out_path: Path) -> None:
     plt.close()
 
 
-# ----------------------------------------------------------------------------
-# Figure 2 — Pareto: 2 sub-panels (ID + far-OOD Dice vs trainable params)
-# ----------------------------------------------------------------------------
+# Figure 2: Pareto, ID + far-OOD Dice vs trainable params
 def plot_pareto_id_vs_ood(df: pd.DataFrame, out_path: Path) -> None:
     fig, axes = plt.subplots(1, 2, figsize=(15, 6.5), sharey=False)
 
@@ -165,7 +148,7 @@ def plot_pareto_id_vs_ood(df: pd.DataFrame, out_path: Path) -> None:
                 "zero-\nshot", ha="center", fontsize=8, color="gray", alpha=0.7)
 
     fig.suptitle(
-        "Performance vs. trainable parameter count — ID vs. far-OOD\n"
+        "Performance vs. trainable parameter count: ID vs. far-OOD\n"
         "(ranking inverts on BUSI: methods that modify the encoder lose to those that don't)",
         fontsize=13, y=1.02,
     )
@@ -174,10 +157,7 @@ def plot_pareto_id_vs_ood(df: pd.DataFrame, out_path: Path) -> None:
     plt.close()
 
 
-# ----------------------------------------------------------------------------
-# Figure 3 — Drift gap with value labels (linear scale; PH² gets value labels
-# even though bars are tiny)
-# ----------------------------------------------------------------------------
+# Figure 3: Drift gap with value labels (PH2 bars are tiny but still labelled)
 def plot_drift_gap(df: pd.DataFrame, out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(14, 6.5))
     bar_w = 0.27
@@ -194,7 +174,7 @@ def plot_drift_gap(df: pd.DataFrame, out_path: Path) -> None:
         ddsm_gaps.append(id_d - ddsm_d if not np.isnan(ddsm_d) else np.nan)
 
     b1 = ax.bar(x - bar_w, ph2_gaps, bar_w, color="#1f77b4", alpha=0.85,
-                edgecolor="black", linewidth=0.6, label="PH² (near-OOD)")
+                edgecolor="black", linewidth=0.6, label="PH2 (near-OOD)")
     b2 = ax.bar(x, busi_gaps, bar_w, color="#d62728", alpha=0.85,
                 edgecolor="black", linewidth=0.6, label="BUSI (far-OOD)")
     b3 = ax.bar(x + bar_w, ddsm_gaps, bar_w, color="#8c564b", alpha=0.85,
@@ -222,8 +202,8 @@ def plot_drift_gap(df: pd.DataFrame, out_path: Path) -> None:
 
     ax.set_xticks(x)
     ax.set_xticklabels([METHOD_LABELS[m] for m in METHODS], rotation=15)
-    ax.set_ylabel("Drift gap (ID Dice − OOD Dice)")
-    ax.set_title("Distribution drift cost — lower bar = more robust", fontsize=13)
+    ax.set_ylabel("Drift gap (ID Dice - OOD Dice)")
+    ax.set_title("Distribution drift cost: lower bar = more robust", fontsize=13)
     ax.axhline(0, color="black", linewidth=0.6)
     ax.grid(axis="y", alpha=0.3, linestyle="--")
     ax.set_axisbelow(True)
@@ -233,9 +213,7 @@ def plot_drift_gap(df: pd.DataFrame, out_path: Path) -> None:
     plt.close()
 
 
-# ----------------------------------------------------------------------------
-# Figure 4 — HD95 split panel (skin domain vs ultrasound, linear scales)
-# ----------------------------------------------------------------------------
+# Figure 4: HD95 split panel (skin domain vs ultrasound, linear scales)
 def plot_hd95_split(df: pd.DataFrame, out_path: Path) -> None:
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 5.5),
                                     gridspec_kw={"width_ratios": [1.3, 1]})
@@ -244,13 +222,13 @@ def plot_hd95_split(df: pd.DataFrame, out_path: Path) -> None:
     x = np.arange(len(METHODS))
     bar_w = 0.4
 
-    # Left panel: ISIC + PH² (skin domain, all values < 20 px)
+    # Left panel: ISIC + PH2 (skin domain, all values < 20 px)
     isic_v = [get(df, m, "isic2018_test", "hd95_mean") for m in METHODS]
     ph2_v = [get(df, m, "ph2", "hd95_mean") for m in METHODS]
     b1 = ax1.bar(x - bar_w / 2, isic_v, bar_w, color="#1f77b4", alpha=0.85,
                  edgecolor="black", linewidth=0.6, label="ISIC (ID)")
     b2 = ax1.bar(x + bar_w / 2, ph2_v, bar_w, color="#ff7f0e", alpha=0.85,
-                 edgecolor="black", linewidth=0.6, label="PH² (near-OOD)")
+                 edgecolor="black", linewidth=0.6, label="PH2 (near-OOD)")
     for bar, val in zip(list(b1) + list(b2), isic_v + ph2_v):
         if np.isnan(val):
             continue
@@ -260,7 +238,7 @@ def plot_hd95_split(df: pd.DataFrame, out_path: Path) -> None:
     ax1.set_xticks(x)
     ax1.set_xticklabels(method_names, rotation=15)
     ax1.set_ylabel("HD95 (pixels)")
-    ax1.set_title("Skin domain (ISIC + PH²)", fontsize=12, fontweight="bold")
+    ax1.set_title("Skin domain (ISIC + PH2)", fontsize=12, fontweight="bold")
     ax1.grid(axis="y", alpha=0.3, linestyle="--")
     ax1.set_axisbelow(True)
     ax1.legend(loc="upper right")
@@ -287,23 +265,21 @@ def plot_hd95_split(df: pd.DataFrame, out_path: Path) -> None:
     ax2.set_axisbelow(True)
     ax2.legend(loc="upper right")
 
-    fig.suptitle("Boundary error (HD95) — separate scales for skin vs far-OOD domains",
+    fig.suptitle("Boundary error (HD95): separate scales for skin vs far-OOD domains",
                  fontsize=13, y=1.02)
     plt.tight_layout()
     plt.savefig(out_path, dpi=DPI, bbox_inches="tight")
     plt.close()
 
 
-# ----------------------------------------------------------------------------
-# Figure 5 — 2-panel scatter: ISIC vs PH² | ISIC vs BUSI, with y=x diagonal
-# ----------------------------------------------------------------------------
+# Figure 5: scatter ISIC vs PH2 | ISIC vs BUSI, with y=x diagonal
 def plot_id_vs_ood_scatter(df: pd.DataFrame, out_path: Path) -> None:
     fig, axes = plt.subplots(1, 3, figsize=(22, 7))
 
     for ax, ood_ds, ood_label in zip(
         axes,
         ["ph2", "busi", "cbis_ddsm"],
-        ["PH² Dice (near-OOD)", "BUSI Dice (far-OOD)", "CBIS-DDSM Dice (far-OOD)"],
+        ["PH2 Dice (near-OOD)", "BUSI Dice (far-OOD)", "CBIS-DDSM Dice (far-OOD)"],
     ):
         for m in METHODS:
             id_d = get(df, m, "isic2018_test", "dice_mean")
@@ -339,7 +315,7 @@ def plot_id_vs_ood_scatter(df: pd.DataFrame, out_path: Path) -> None:
 
     fig.suptitle(
         "Distance below the y=x diagonal = drift cost\n"
-        "(PH² hugs the diagonal; BUSI shows big drops for encoder-modifying methods; "
+        "(PH2 hugs the diagonal; BUSI shows big drops for encoder-modifying methods; "
         "CBIS-DDSM shows the largest drops)",
         fontsize=13, y=1.03,
     )
@@ -348,9 +324,7 @@ def plot_id_vs_ood_scatter(df: pd.DataFrame, out_path: Path) -> None:
     plt.close()
 
 
-# ----------------------------------------------------------------------------
-# Figure 6 — Drift curves (no error bars; cleaner)
-# ----------------------------------------------------------------------------
+# Figure 6: Drift curves (no error bars)
 def plot_drift_curves(df: pd.DataFrame, out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(11, 6.5))
     xs = list(range(len(DATASETS)))
@@ -374,7 +348,7 @@ def plot_drift_curves(df: pd.DataFrame, out_path: Path) -> None:
 
     ax.set_xticks(xs)
     ax.set_xticklabels([DATASET_LABELS[ds] for ds in DATASETS], fontsize=11)
-    ax.set_xlabel("Increasing distribution shift →", fontsize=11)
+    ax.set_xlabel("Increasing distribution shift ->", fontsize=11)
     ax.set_ylabel("Dice", fontsize=11)
     ax.set_title("Method robustness across the drift ladder", fontsize=13)
     ax.legend(loc="lower left", title="Method", framealpha=0.95)
@@ -385,9 +359,7 @@ def plot_drift_curves(df: pd.DataFrame, out_path: Path) -> None:
     plt.close()
 
 
-# ----------------------------------------------------------------------------
-# Figure 7 — Bumps chart: method ranking across datasets (NEW)
-# ----------------------------------------------------------------------------
+# Figure 7: Bumps chart, method ranking across datasets
 def plot_rank_reversal(df: pd.DataFrame, out_path: Path) -> None:
     """Slopechart showing how each method's rank changes across datasets."""
     fig, ax = plt.subplots(figsize=(11, 7))
@@ -420,7 +392,7 @@ def plot_rank_reversal(df: pd.DataFrame, out_path: Path) -> None:
     ax.invert_yaxis()
     ax.set_title(
         "Method ranking flips across the drift ladder\n"
-        "LoRA: best PEFT on ID → worst on far-OOD;  Decoder-only: middling on ID → 2nd on far-OOD",
+        "LoRA: best PEFT on ID -> worst on far-OOD;  Decoder-only: middling on ID -> 2nd on far-OOD",
         fontsize=12,
     )
     ax.set_xlim(-0.2, len(DATASETS) + 0.5)
@@ -431,9 +403,7 @@ def plot_rank_reversal(df: pd.DataFrame, out_path: Path) -> None:
     plt.close()
 
 
-# ----------------------------------------------------------------------------
-# Figure 8 — Summary heatmap: methods × datasets × Dice
-# ----------------------------------------------------------------------------
+# Figure 8: Summary heatmap, methods x datasets x Dice
 def plot_summary_heatmap(df: pd.DataFrame, out_path: Path) -> None:
     matrix = np.array(
         [[get(df, m, ds, "dice_mean") for ds in DATASETS] for m in METHODS]
@@ -448,7 +418,7 @@ def plot_summary_heatmap(df: pd.DataFrame, out_path: Path) -> None:
         for j in range(len(DATASETS)):
             val = matrix[i, j]
             if np.isnan(val):
-                txt = "—"
+                txt = "-"
             else:
                 txt = f"{val:.4f}"
             # Text color: black on light, white on dark (for readability)
@@ -460,15 +430,13 @@ def plot_summary_heatmap(df: pd.DataFrame, out_path: Path) -> None:
     ax.set_xticklabels([DATASET_LABELS[ds] for ds in DATASETS], fontsize=11)
     ax.set_yticks(range(len(METHODS)))
     ax.set_yticklabels([METHOD_LABELS[m] for m in METHODS], fontsize=11)
-    ax.set_title("Dice — methods × drift ladder (summary)", fontsize=13)
+    ax.set_title("Dice: methods x drift ladder (summary)", fontsize=13)
     plt.tight_layout()
     plt.savefig(out_path, dpi=DPI, bbox_inches="tight")
     plt.close()
 
 
-# ----------------------------------------------------------------------------
 # Summary table CSV
-# ----------------------------------------------------------------------------
 def write_summary_table(df: pd.DataFrame, out_path: Path) -> None:
     rows = []
     for m in METHODS:
@@ -478,19 +446,18 @@ def write_summary_table(df: pd.DataFrame, out_path: Path) -> None:
             s = get(df, m, ds, "dice_std")
             h = get(df, m, ds, "hd95_mean")
             i = get(df, m, ds, "iou_mean")
-            row[f"{ds}_dice"] = f"{d:.4f} ± {s:.4f}" if not np.isnan(d) else "—"
-            row[f"{ds}_iou"] = f"{i:.4f}" if not np.isnan(i) else "—"
-            row[f"{ds}_hd95"] = f"{h:.2f}" if not np.isnan(h) else "—"
+            row[f"{ds}_dice"] = f"{d:.4f} +/- {s:.4f}" if not np.isnan(d) else "-"
+            row[f"{ds}_iou"] = f"{i:.4f}" if not np.isnan(i) else "-"
+            row[f"{ds}_hd95"] = f"{h:.2f}" if not np.isnan(h) else "-"
         p = get(df, m, "isic2018_test", "trainable_params")
         row["trainable_params"] = int(p) if not np.isnan(p) else 0
         rows.append(row)
     pd.DataFrame(rows).to_csv(out_path, index=False)
 
 
-# ----------------------------------------------------------------------------
 def main() -> int:
     if not RUNS_CSV.exists():
-        print(f"[plots] {RUNS_CSV} not found — nothing to do")
+        print(f"[plots] {RUNS_CSV} not found, nothing to do")
         return 1
 
     FIG_DIR.mkdir(parents=True, exist_ok=True)

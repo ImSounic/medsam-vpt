@@ -1,10 +1,8 @@
 """Download the MedSAM ViT-B checkpoint into checkpoints/medsam_vit_b.pth.
 
-Pulls from Zenodo, the academic mirror linked from the official
-bowang-lab/MedSAM repo. ~358 MB. The earlier HF path I tried
-(wanglab/medsam-vit-base) doesn't host the segment_anything-format .pth
-file we need; the HF Transformers-format weights live there but require
-a different loading path.
+Pulls from Zenodo (~358 MB), the mirror linked from bowang-lab/MedSAM. The
+HF wanglab/medsam-vit-base repo only has Transformers-format weights, not the
+segment_anything-format .pth we need.
 """
 from __future__ import annotations
 
@@ -24,7 +22,7 @@ def main() -> int:
         if size_mb > 100:  # sanity: real weights are ~358 MB
             print(f"[skip] {TARGET} already exists ({size_mb:.1f} MB)")
             return 0
-        print(f"[warn] {TARGET} exists but only {size_mb:.1f} MB — re-downloading")
+        print(f"[warn] {TARGET} exists but only {size_mb:.1f} MB, re-downloading")
         TARGET.unlink()
 
     print(f"[download] {URL}")

@@ -5,17 +5,9 @@ Predictions and targets are expected to be 0/1.
 """
 from __future__ import annotations
 
-# --- Silence tensorflow / tensorboard chatter before anything else ---------
-# monai.metrics.utils.get_surface_distance pulls in monai's full package init,
-# which on some clusters (JupyterLab, etc.) transitively loads tensorboard ->
-# tensorflow -> ml_dtypes. That chain prints C++ INFO/ERROR lines and Python
-# tracebacks even when monai eventually works. We can't fix the cluster's
-# broken TF install, but we can:
-#   1. Tell TF's C++ logger to be quiet via env vars (must be set BEFORE
-#      tensorflow is imported, hence before monai).
-#   2. Eager-import monai inside redirected stderr/stdout so any Python-side
-#      noise during the import chain is captured silently.
-# After this block, hd95() is fast and never re-imports anything.
+# Silence tensorflow/tensorboard noise that monai's import chain can trigger on
+# some clusters. The env vars must be set before tensorflow is imported (hence
+# before monai), and monai is eager-imported under redirected stdout/stderr.
 import os
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
@@ -37,7 +29,7 @@ with contextlib.redirect_stderr(io.StringIO()), \
         from monai.metrics.utils import get_surface_distance as _monai_gsd
         _MONAI_GET_SURFACE = _monai_gsd
     except Exception:
-        # monai unavailable / broken on this machine — hd95() falls back to scipy.
+        # monai unavailable/broken here; hd95() falls back to scipy.
         _MONAI_GET_SURFACE = None
 
 
@@ -48,13 +40,13 @@ def _to_numpy(x) -> np.ndarray:
 
 
 def dice_score(pred, target, eps: float = 1e-6) -> float:
-    """Soft-Dice: 2|A∩B| / (|A|+|B|). Scalar."""
+    """Dice: 2|A and B| / (|A|+|B|). Scalar."""
     pred = _to_numpy(pred).astype(bool)
     target = _to_numpy(target).astype(bool)
     inter = np.logical_and(pred, target).sum()
     denom = pred.sum() + target.sum()
     if denom == 0:
-        return 1.0  # both empty — convention: perfect score
+        return 1.0  # both empty: count as perfect
     return float((2.0 * inter + eps) / (denom + eps))
 
 
@@ -70,11 +62,10 @@ def iou_score(pred, target, eps: float = 1e-6) -> float:
 
 
 def hd95(pred, target) -> float:
-    """95th-percentile Hausdorff distance, in pixels.
+    """95th-percentile Hausdorff distance in pixels.
 
-    Uses monai's robust implementation if available; falls back to a simple
-    scipy-based version otherwise. Returns inf if either mask is empty
-    (which we substitute with the image diagonal in aggregation).
+    Uses monai if available, else a scipy fallback. Returns inf if either mask
+    is empty (aggregation substitutes a finite value).
     """
     pred = _to_numpy(pred).astype(bool)
     target = _to_numpy(target).astype(bool)
@@ -94,15 +85,13 @@ def hd95(pred, target) -> float:
         except Exception:
             pass  # fall through to scipy
 
-    # Fallback: distance transforms via scipy (used if monai is unavailable
-    # or raises at call time)
+    # scipy fallback
     from scipy.ndimage import distance_transform_edt
 
-    # Distance from each pred boundary point to nearest target point
     target_dt = distance_transform_edt(~target)
     pred_dt = distance_transform_edt(~pred)
 
-    # Boundary-only is more correct, but for a fallback we use full-mask DTs
+    # Boundary-only would be more correct; for a fallback we use full-mask DTs
     d_pred_to_target = target_dt[pred]
     d_target_to_pred = pred_dt[target]
     d_all = np.concatenate([d_pred_to_target, d_target_to_pred])
@@ -112,7 +101,7 @@ def hd95(pred, target) -> float:
 
 
 def aggregate_metrics(per_image: list[dict]) -> dict:
-    """Aggregate per-image metric dicts into mean ± std + bootstrap CI."""
+    """Aggregate per-image metric dicts into mean, std, and bootstrap CI."""
     if not per_image:
         return {}
 

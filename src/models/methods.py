@@ -1,16 +1,14 @@
 """Adaptation method dispatcher.
 
-Each method's setup logic lives in its own module under src/models/.
-This file routes a method name to the corresponding `apply_*` function
-and reports parameter counts.
+Routes a method name to its apply_* function and reports parameter counts.
 
-Methods supported:
-    zero_shot      — everything frozen (no training, just inference)
-    decoder_only   — encoder frozen, mask decoder trainable
-    vpt_shallow    — encoder frozen + VPT prompts at input + decoder
-    vpt_deep       — encoder frozen + per-layer VPT prompts + decoder
-    full_ft        — encoder + decoder trainable
-    lora           — encoder frozen except LoRA adapters on attn qkv + decoder
+Methods:
+    zero_shot      everything frozen (inference only)
+    decoder_only   encoder frozen, mask decoder trainable
+    vpt_shallow    encoder frozen + VPT prompts at input + decoder
+    vpt_deep       encoder frozen + per-layer VPT prompts + decoder
+    full_ft        encoder + decoder trainable
+    lora           encoder frozen except LoRA on attn qkv + decoder
 """
 from __future__ import annotations
 
@@ -35,7 +33,7 @@ def setup_method(sam: Sam, method: str, **kwargs) -> dict:
     elif method == "full_ft":
         apply_full_ft(sam, **kwargs)
     elif method == "lora":
-        # Imported lazily so the project runs without peft installed for non-LoRA methods.
+        # Lazy import to keep startup light for non-LoRA runs.
         from .lora import apply_lora
         apply_lora(sam, **kwargs)
     else:
@@ -57,9 +55,8 @@ def setup_method(sam: Sam, method: str, **kwargs) -> dict:
 def encoder_in_grad_path(method: str) -> bool:
     """Whether the encoder forward must be inside the autograd graph.
 
-    True for any method whose trainable parameters live inside the encoder
-    (full_ft, vpt_*, lora). False for decoder-only and zero-shot, where we
-    can wrap the encoder forward in torch.no_grad() to skip activation
-    caching and roughly halve training memory.
+    True when trainable params live in the encoder (full_ft, vpt_*, lora).
+    False for decoder_only and zero_shot, where the encoder forward can run
+    under torch.no_grad() to skip activation caching (~half the memory).
     """
     return method in {"full_ft", "vpt_shallow", "vpt_deep", "lora"}

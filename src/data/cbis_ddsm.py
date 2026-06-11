@@ -1,32 +1,14 @@
-"""CBIS-DDSM dataset — Curated Breast Imaging Subset of DDSM (Lee et al., 2017).
+"""CBIS-DDSM - Curated Breast Imaging Subset of DDSM (Lee et al., 2017).
 
-Used as a *far-OOD* test set: mammography (X-ray) — completely different
-imaging physics from dermoscopy (visible light) or ultrasound (acoustic).
+Far-OOD test set: mammography (X-ray), different physics from dermoscopy or ultrasound.
+Kaggle: awsaf49/cbis-ddsm-breast-cancer-image-dataset, layout data/cbis-ddsm/csv/
+(dicom_info.csv etc.) + jpeg/<SeriesUID>/X-NNN.jpg.
 
-Distribution (Kaggle: awsaf49/cbis-ddsm-breast-cancer-image-dataset):
-
-    data/cbis-ddsm/
-    ├── csv/
-    │   ├── dicom_info.csv                  # maps every JPG to series UID + description
-    │   ├── mass_case_description_test_set.csv / *_train_set.csv
-    │   └── calc_case_description_test_set.csv / *_train_set.csv
-    └── jpeg/
-        └── <SeriesInstanceUID>/X-NNN.jpg   # 10K+ folders, JPGs inside
-
-The Series Description column in dicom_info.csv labels each JPG as one of:
-  - "full mammogram images" (2,857 total)
-  - "ROI mask images"       (3,247 total — binary masks, 0 = background, 255 = lesion)
-  - "cropped images"        (3,567 total — zoomed lesion patches, unused here)
-
-Pairing: each ROI mask's PatientID has the form
-    Mass-Test_P_00016_LEFT_CC_1
-where the trailing `_1` is the abnormality index. The corresponding full
-mammogram has PatientID `Mass-Test_P_00016_LEFT_CC` (no suffix). Mammograms
-with multiple lesions have multiple masks (`_1`, `_2`, ...) which we OR
-together into a single binary "any lesion" mask.
-
-By default we restrict to the TEST split (PatientIDs containing `-Test_`)
-so we don't accidentally evaluate on the dataset's training subset.
+dicom_info.csv SeriesDescription labels each JPG: "full mammogram images",
+"ROI mask images" (binary, 0=bg, 255=lesion), "cropped images" (unused).
+Pairing: mask PatientID Mass-Test_P_00016_LEFT_CC_1 has a trailing abnormality
+index; the full mammogram drops that suffix. Multiple masks per mammogram are
+OR'd into one "any lesion" mask. Default split = test (PatientID contains -Test_).
 """
 from __future__ import annotations
 
@@ -45,14 +27,9 @@ from .isic import PIXEL_MEAN, PIXEL_STD, _bbox_from_mask
 class CBISDDSM(Dataset):
     """CBIS-DDSM mammography dataset.
 
-    Args:
-        root: path to data/cbis-ddsm/ (containing csv/ and jpeg/).
-        split: "test" or "train" (we use test for OOD evaluation).
-        image_size: square size to resize to (1024 for MedSAM).
-        bbox_perturb_pixels: jitter on bbox prompts (0 for eval).
-        abnormality_type: "all" (default), "mass" only, or "calc" only.
-            Masses are larger and easier to segment; calcifications are
-            tiny bright dots and much harder.
+    root = data/cbis-ddsm/ (csv/ and jpeg/). split test/train (test for OOD eval).
+    image_size resize target. bbox_perturb_pixels = jitter (0 for eval).
+    abnormality_type: all/mass/calc. Masses are larger and easier than calcifications.
     """
 
     def __init__(
@@ -75,9 +52,8 @@ class CBISDDSM(Dataset):
                 f" and jpeg/<SeriesUID>/*.jpg files."
             )
 
-        # Read the CSV with the stdlib csv module rather than pandas. pandas +
-        # PyTorch on Windows can trigger an OpenMP DLL conflict that silently
-        # terminates the process; stdlib csv has no such dependency.
+        # Use stdlib csv, not pandas: pandas + PyTorch on Windows can hit an OpenMP
+        # DLL conflict that silently kills the process.
         split_tag = "-Test_" if split == "test" else "-Training_"
         fulls: list[tuple[str, str]] = []   # (PatientID, image_path)
         masks_rows: list[tuple[str, str]] = []
@@ -103,7 +79,7 @@ class CBISDDSM(Dataset):
         # Build index: full_mammogram_PID -> list[mask_path]
         mask_by_pid: dict = {}
         for mpid, mpath in masks_rows:
-            # Strip trailing "_<digits>" to recover the full mammogram PID
+            # Drop trailing "_<digits>" to recover the full mammogram PID
             parts = mpid.rsplit("_", 1)
             base_pid = parts[0] if len(parts) == 2 and parts[1].isdigit() else mpid
             mask_by_pid.setdefault(base_pid, []).append(self._resolve_path(mpath))
@@ -123,13 +99,10 @@ class CBISDDSM(Dataset):
             )
 
     def _resolve_path(self, csv_path: str) -> Path:
-        """Convert dicom_info.csv's image_path to a real filesystem path.
-
-        csv_path looks like: 'CBIS-DDSM/jpeg/<SeriesUID>/X-NNN.jpg'
-        Real path: '<root>/jpeg/<SeriesUID>/X-NNN.jpg'
-        """
+        """Map dicom_info.csv image_path ('CBIS-DDSM/jpeg/<UID>/X.jpg') to
+        '<root>/jpeg/<UID>/X.jpg'."""
         s = csv_path.strip()
-        # Strip various possible prefixes used by different Kaggle redistributions
+        # Strip prefixes used by different Kaggle redistributions
         for prefix in ("CBIS-DDSM/", "cbis-ddsm/"):
             if s.startswith(prefix):
                 s = s[len(prefix):]
@@ -145,18 +118,17 @@ class CBISDDSM(Dataset):
         img_pil = Image.open(full_path).convert("RGB")
         orig_w, orig_h = img_pil.size
 
-        # OR all instance masks into a single binary mask
+        # OR all instance masks into one binary mask
         combined = np.zeros((orig_h, orig_w), dtype=bool)
         for mp in mask_paths:
             m = np.array(Image.open(mp).convert("L"))
-            # Some mask files are slightly different size; resize to match the image
+            # Some masks differ slightly in size; resize to match the image
             if m.shape != (orig_h, orig_w):
                 m = np.array(
                     Image.fromarray(m).resize((orig_w, orig_h), Image.NEAREST)
                 )
             combined |= m > 127
 
-        # Resize image + mask to MedSAM's expected resolution
         img_pil = img_pil.resize((self.image_size, self.image_size), Image.BILINEAR)
         msk_pil = Image.fromarray(combined.astype(np.uint8) * 255).resize(
             (self.image_size, self.image_size), Image.NEAREST

@@ -14,17 +14,17 @@ model:
 
 data:
   root: data
-  bbox_perturb_pixels: 20  # ±20 px jitter on each corner of the bbox per training step
+  bbox_perturb_pixels: 20  # +/-20 px jitter per bbox corner each step
 
 train:
-  batch_size: 1            # full FT at 1024px needs all of A16's 16 GB
+  batch_size: 1            # full FT at 1024px needs all 16 GB of A16
   num_workers: 2
   epochs: 6                # match other methods for fair comparison
-  lr: 1.0e-5               # 50x lower than PEFT — full FT needs gentler updates
-  weight_decay: 1.0e-4     # mild WD to prevent encoder drift
+  lr: 1.0e-5               # 50x lower than PEFT, full FT needs gentler updates
+  weight_decay: 1.0e-4     # mild WD to limit encoder drift
   dice_weight: 0.5
   amp: true
-  cooldown_seconds: 60     # defensive thermal pause
+  cooldown_seconds: 60     # thermal pause
 
 eval:
   batch_size: 1

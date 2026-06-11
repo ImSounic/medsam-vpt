@@ -1,19 +1,16 @@
 """Qualitative prediction visualizations.
 
-Produces figures showing input image, ground-truth mask, model prediction,
-and an error breakdown (TP / FP / FN) per example. One figure per
-(method, dataset) pair, saved to results/figures/qualitative/.
+One figure per (method, dataset) pair, each row showing input image, GT mask,
+prediction, and TP/FP/FN error breakdown. Saved to results/figures/qualitative/.
+
+Sample selection (--strategy):
+    first   first N items (default, deterministic)
+    spread  examples spanning best/mid/worst Dice from the per-image CSV
 
 Usage:
-    python scripts/visualize_predictions.py                          # all methods × all datasets
-    python scripts/visualize_predictions.py --method lora full_ft    # only those methods
-    python scripts/visualize_predictions.py --dataset busi cbis_ddsm # only those datasets
-    python scripts/visualize_predictions.py --n 6                    # 6 examples per dataset
-    python scripts/visualize_predictions.py --strategy spread        # easy/medium/hard examples by Dice
-
-Strategies for sample selection (--strategy):
-    first    — first N items in the dataset (default, deterministic, fast)
-    spread   — examples spanning best/mid/worst Dice from results/raw/<run>_<ds>_per_image.csv
+    python scripts/visualize_predictions.py
+    python scripts/visualize_predictions.py --method lora full_ft
+    python scripts/visualize_predictions.py --dataset busi cbis_ddsm --n 6
 """
 from __future__ import annotations
 
@@ -68,9 +65,7 @@ DATASET_TO_CSV_NAME = {
 }
 
 
-# ----------------------------------------------------------------------------
 # Sample selection
-# ----------------------------------------------------------------------------
 def pick_indices_first(dataset, n: int) -> list[int]:
     """First N items deterministically."""
     return list(range(min(n, len(dataset))))
@@ -88,7 +83,7 @@ def pick_indices_spread(run_name: str, ds_csv_name: str, dataset, n: int) -> lis
             rows.append((r["image_id"], float(r["dice"])))
     if not rows:
         return pick_indices_first(dataset, n)
-    # Sort high → low Dice
+    # Sort high to low Dice
     rows.sort(key=lambda x: x[1], reverse=True)
     # Pick evenly spaced indices
     idxs = np.linspace(0, len(rows) - 1, n).astype(int).tolist()
@@ -107,9 +102,7 @@ def pick_indices_spread(run_name: str, ds_csv_name: str, dataset, n: int) -> lis
     return out
 
 
-# ----------------------------------------------------------------------------
 # Rendering helpers
-# ----------------------------------------------------------------------------
 def denormalize_image(img_tensor: torch.Tensor) -> np.ndarray:
     """Convert preprocessed (3,H,W) tensor back to a uint8 RGB array."""
     arr = img_tensor.cpu().clone() * PIXEL_STD + PIXEL_MEAN
@@ -148,9 +141,7 @@ def dice_iou(pred: np.ndarray, gt: np.ndarray) -> tuple[float, float]:
     return dice, iou
 
 
-# ----------------------------------------------------------------------------
 # Per-(method, dataset) figure
-# ----------------------------------------------------------------------------
 @torch.no_grad()
 def render_figure(
     method_name: str,
@@ -163,7 +154,7 @@ def render_figure(
     out_path: Path,
 ) -> None:
     label = method_cfg["label"]
-    print(f"[viz] {label} × {dataset_name} -> {out_path.name}")
+    print(f"[viz] {label} x {dataset_name} -> {out_path.name}")
 
     # Set up SAM with the right wrapper / weights
     sam = load_medsam(REPO_ROOT / "checkpoints" / "medsam_vit_b.pth", device=device)
@@ -190,7 +181,7 @@ def render_figure(
     else:
         idxs = pick_indices_first(dataset, n_samples)
     if not idxs:
-        print(f"  [viz] no samples available — skipping")
+        print(f"  [viz] no samples available, skipping")
         return
 
     fig, axes = plt.subplots(
@@ -246,9 +237,7 @@ def render_figure(
     plt.close()
 
 
-# ----------------------------------------------------------------------------
 # CLI
-# ----------------------------------------------------------------------------
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument(
@@ -299,7 +288,7 @@ def main() -> int:
                     device=device, out_path=out,
                 )
             except Exception as e:
-                print(f"  [viz] failed for {method_name} × {ds_name}: {e}")
+                print(f"  [viz] failed for {method_name} x {ds_name}: {e}")
 
     print(f"\n[viz] All figures in {FIG_DIR}/")
     return 0

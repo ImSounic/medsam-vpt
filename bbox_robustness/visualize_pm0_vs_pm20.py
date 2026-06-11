@@ -1,28 +1,20 @@
 """Side-by-side qualitative comparison: pm=0 trained vs pm=20 trained.
 
-For each (method, dataset, image) we render a 4-row × 4-column figure:
+For each (method, dataset, image), a 4-row by 4-column figure:
 
     Rows: perturb levels 20, 50, 100, 200 px
-    Cols: input + perturbed bbox  |  ground truth (green)  |  pm=0 trained pred  |  pm=20 trained pred
+    Cols: input + perturbed bbox | ground truth | pm=0 pred | pm=20 pred
 
-Both columns 2 and 3 show the prediction overlay with Dice annotation. Column
-3 also shows ΔDice vs the pm=0 column so the comparison is at a glance.
+Cols 2 and 3 show predictions with Dice; col 3 also shows delta Dice vs pm=0.
+zero_shot is skipped (same model in both trainings). The per-row bbox is the
+deterministic sample_idx=0 draw, fed to both models so the comparison is fair.
 
-zero_shot is skipped (identical model in both trainings → nothing to compare).
-The bbox shown per row is the deterministic sample_idx=0 draw — the same
-bbox is fed to BOTH models so the comparison is fair.
-
-Output: bbox_robustness/results_pm20/figures/comparison/<method>__<dataset>__<image_id>.png
+Output: results_pm20/figures/comparison/<method>__<dataset>__<image_id>.png
 
 Usage:
-    # All methods × all datasets × first 4 images each
     python bbox_robustness/visualize_pm0_vs_pm20.py
-
-    # Just the striking cases — vpt_shallow on cbis_ddsm
     python bbox_robustness/visualize_pm0_vs_pm20.py \\
         --method vpt_shallow --dataset cbis_ddsm --n 4
-
-    # Best/mid/worst Dice picks (needs per_image CSVs from the pm=0 robustness eval)
     python bbox_robustness/visualize_pm0_vs_pm20.py --strategy spread
 """
 from __future__ import annotations
@@ -57,11 +49,11 @@ from src.models.methods import setup_method  # noqa: E402
 
 
 FIG_DIR = REPO_ROOT / "bbox_robustness" / "results_pm20" / "figures" / "comparison"
-# Per-image CSVs from the pm=0 eval — used by --strategy spread
+# Per-image CSVs from the pm=0 eval, used by --strategy spread
 PM0_PER_IMAGE_DIR = REPO_ROOT / "bbox_robustness" / "results" / "per_image"
 
-# Method config — checkpoint paths for BOTH trainings. zero_shot is excluded
-# (no checkpoint, same model in both conditions, nothing to compare).
+# Checkpoint paths for both trainings. zero_shot is excluded: same model in
+# both conditions, nothing to compare.
 METHODS = {
     "decoder_only": {
         "pm0":   "checkpoints/runs/decoder_only_seed0/best.pth",
@@ -107,9 +99,6 @@ DATASET_TO_CSV_NAME = {
 IMAGE_SIZE = 1024
 
 
-# ----------------------------------------------------------------------------
-# Sample selection
-# ----------------------------------------------------------------------------
 def pick_indices_first(dataset, n: int) -> list[int]:
     return list(range(min(n, len(dataset))))
 
@@ -117,8 +106,8 @@ def pick_indices_first(dataset, n: int) -> list[int]:
 def pick_indices_spread(
     pm0_run_name: str, ds_csv_name: str, perturb_max: int, dataset, n: int,
 ) -> list[int]:
-    """Pick indices spanning the dice distribution at the LARGEST perturb level
-    from the pm=0 per_image CSV. Same images get rendered for both trainings.
+    """Pick indices spanning the Dice distribution at the largest perturb level
+    from the pm=0 per_image CSV. Same images are rendered for both trainings.
     """
     csv_path = PM0_PER_IMAGE_DIR / f"{pm0_run_name}_{ds_csv_name}_pm{perturb_max}.csv"
     if not csv_path.exists():
@@ -143,9 +132,6 @@ def pick_indices_spread(
     return out if out else pick_indices_first(dataset, n)
 
 
-# ----------------------------------------------------------------------------
-# Rendering helpers
-# ----------------------------------------------------------------------------
 def denormalize_image(img_tensor: torch.Tensor) -> np.ndarray:
     arr = img_tensor.cpu().clone() * PIXEL_STD + PIXEL_MEAN
     return arr.permute(1, 2, 0).numpy().clip(0, 255).astype(np.uint8)
@@ -176,9 +162,7 @@ def safe_filename(s: str) -> str:
     return cleaned.strip("_")
 
 
-# ----------------------------------------------------------------------------
 # Build a SAM with the given method + checkpoint loaded
-# ----------------------------------------------------------------------------
 def build_sam_for_method(base_sd: dict, ckpt_path: Path, device: str) -> torch.nn.Module:
     sam = load_medsam_from_state_dict(base_sd, device=device)
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
@@ -190,9 +174,6 @@ def build_sam_for_method(base_sd: dict, ckpt_path: Path, device: str) -> torch.n
     return sam
 
 
-# ----------------------------------------------------------------------------
-# The comparison figure
-# ----------------------------------------------------------------------------
 @torch.no_grad()
 def render_comparison(
     sam_pm0, sam_pm20, method_label: str, dataset_name: str,
@@ -203,7 +184,7 @@ def render_comparison(
     tight_bbox = item["bbox"].numpy()
     img_id = item["image_id"]
 
-    # Encode the image with BOTH models (different weights → different embeddings)
+    # Encode with both models (different weights give different embeddings)
     images_t = item["image"].unsqueeze(0).to(device)
     emb_pm0 = sam_pm0.image_encoder(images_t)
     emb_pm20 = sam_pm20.image_encoder(images_t)
@@ -212,8 +193,7 @@ def render_comparison(
     fig, axes = plt.subplots(n_rows, 4, figsize=(20, 5 * n_rows), squeeze=False)
 
     for row, pm in enumerate(perturb_levels):
-        # Deterministic perturbed bbox for this image at this level — SAME bbox
-        # fed to both models so the comparison is apples to apples.
+        # Deterministic perturbed bbox, same one fed to both models
         rng = make_rng(img_id, pm, sample_idx=0)
         perturbed = expand_bbox(tight_bbox, pm, IMAGE_SIZE, rng)
         boxes_t = torch.from_numpy(perturbed).unsqueeze(0).to(device).float()
@@ -229,7 +209,7 @@ def render_comparison(
         dice_pm20, iou_pm20 = dice_iou(pred_pm20, gt)
         delta = dice_pm20 - dice_pm0
 
-        # --- Col 0: input + perturbed bbox ---------------------------------
+        # Col 0: input + perturbed bbox
         ax = axes[row, 0]
         ax.imshow(img_rgb)
         x1t, y1t, x2t, y2t = tight_bbox
@@ -239,19 +219,19 @@ def render_comparison(
         x1, y1, x2, y2 = perturbed
         ax.add_patch(plt.Rectangle((x1, y1), x2 - x1, y2 - y1,
                                      fill=False, edgecolor="cyan", linewidth=2.0))
-        ax.set_title(f"Input + bbox (perturb_max = 0–{pm} px)", fontsize=11, fontweight="bold")
-        ax.set_ylabel(f"0–{pm} px", fontsize=12, fontweight="bold", rotation=0,
+        ax.set_title(f"Input + bbox (perturb_max = 0-{pm} px)", fontsize=11, fontweight="bold")
+        ax.set_ylabel(f"0-{pm} px", fontsize=12, fontweight="bold", rotation=0,
                        labelpad=40, va="center")
         ax.set_xticks([]); ax.set_yticks([])
         for spine in ax.spines.values():
             spine.set_visible(False)
 
-        # --- Col 1: ground truth -------------------------------------------
+        # Col 1: ground truth
         axes[row, 1].imshow(overlay_mask(img_rgb, gt, (0, 200, 0)))
         axes[row, 1].set_title("Ground truth (green)", fontsize=11)
         axes[row, 1].axis("off")
 
-        # --- Col 2: pm=0 trained prediction --------------------------------
+        # Col 2: pm=0 trained prediction
         axes[row, 2].imshow(overlay_mask(img_rgb, pred_pm0, (220, 30, 30)))
         axes[row, 2].set_title(
             f"pm=0 trained  |  Dice = {dice_pm0:.3f}, IoU = {iou_pm0:.3f}",
@@ -259,12 +239,12 @@ def render_comparison(
         )
         axes[row, 2].axis("off")
 
-        # --- Col 3: pm=20 trained prediction, with Δ annotation ------------
+        # Col 3: pm=20 trained prediction, with delta annotation
         delta_color = "#2ca02c" if delta > 0.01 else ("#d62728" if delta < -0.01 else "#666666")
         delta_sign = "+" if delta >= 0 else ""
         axes[row, 3].imshow(overlay_mask(img_rgb, pred_pm20, (220, 30, 30)))
         axes[row, 3].set_title(
-            f"pm=20 trained  |  Dice = {dice_pm20:.3f}  |  Δ = {delta_sign}{delta:.3f}",
+            f"pm=20 trained  |  Dice = {dice_pm20:.3f}  |  delta = {delta_sign}{delta:.3f}",
             fontsize=11,
             color=delta_color,
             fontweight="bold" if abs(delta) > 0.05 else "normal",
@@ -272,9 +252,9 @@ def render_comparison(
         axes[row, 3].axis("off")
 
     fig.suptitle(
-        f"{method_label}  ·  {dataset_name}  ·  image {img_id}\n"
+        f"{method_label}  -  {dataset_name}  -  image {img_id}\n"
         f"Comparison: pm=0 trained (col 3) vs pm=20 trained (col 4).  "
-        f"Green Δ = pm=20 better; red Δ = pm=20 worse.",
+        f"Green delta = pm=20 better; red delta = pm=20 worse.",
         fontsize=13, fontweight="bold",
     )
     plt.tight_layout()
@@ -283,9 +263,6 @@ def render_comparison(
     plt.close()
 
 
-# ----------------------------------------------------------------------------
-# CLI + main
-# ----------------------------------------------------------------------------
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument(
@@ -349,7 +326,7 @@ def main() -> int:
             print(f"[viz-compare] skipping {method_name}: pm=20 ckpt missing ({ckpt_pm20})")
             continue
 
-        # Both SAMs in memory simultaneously (~750 MB)
+        # Both SAMs in memory at once (~750 MB)
         sam_pm0  = build_sam_for_method(base_sd, ckpt_pm0,  device)
         sam_pm20 = build_sam_for_method(base_sd, ckpt_pm20, device)
 
@@ -365,7 +342,7 @@ def main() -> int:
                 item = ds[idx]
                 img_id_safe = safe_filename(item["image_id"])
                 out_path = FIG_DIR / f"{method_name}__{ds_name}__{img_id_safe}.png"
-                print(f"[viz-compare] {label} × {ds_name} × {item['image_id']} -> {out_path.name}")
+                print(f"[viz-compare] {label} x {ds_name} x {item['image_id']} -> {out_path.name}")
                 try:
                     render_comparison(
                         sam_pm0, sam_pm20, label, ds_name, item,

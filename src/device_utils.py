@@ -1,22 +1,11 @@
 """Device selection and per-backend helpers.
 
-Single source of truth for picking between CUDA, Apple Silicon (MPS) and CPU.
-Auto-selects in priority order: CUDA > MPS > CPU, so the same code runs on:
-  - Windows / Linux NVIDIA box → CUDA
-  - Mac Mini / MacBook (M-series) → MPS
-  - anywhere else → CPU
+Auto-selects CUDA > MPS > CPU. Wraps the torch.cuda.* calls (peak memory,
+synchronize, empty_cache, seeding, pin_memory) with MPS equivalents or no-ops
+so train.py / eval.py don't branch on device everywhere.
 
-Why a helper module: train.py / eval.py have lots of `torch.cuda.*` calls
-(peak memory, synchronize, empty_cache, manual_seed_all, pin_memory). Each
-of those needs an MPS equivalent (or a no-op). Centralising avoids
-sprinkling `if device == ...` branches everywhere.
-
-Conventions:
-  - `device` is always a string: "cuda" | "mps" | "cpu".
-  - AMP / fp16 autocast is only enabled on CUDA. MPS autocast is still
-    rough (some ops fall back to fp32 silently, GradScaler isn't supported);
-    we keep MPS in fp32 for correctness.
-  - pin_memory is CUDA-only. DataLoader on MPS warns if pin_memory=True.
+`device` is always one of "cuda" | "mps" | "cpu". AMP and pin_memory are
+CUDA-only; MPS stays fp32 (GradScaler unsupported, some ops fall back anyway).
 """
 from __future__ import annotations
 
@@ -87,9 +76,7 @@ def reset_peak_memory(device: str) -> None:
     """Reset peak-memory counter on the active accelerator. No-op on CPU."""
     if device == "cuda":
         torch.cuda.reset_peak_memory_stats()
-    # MPS exposes `torch.mps.driver_allocated_memory()` (current) but no
-    # reset-style API for a separate peak counter — we just report current
-    # usage at the end via peak_memory_mb().
+    # MPS has no peak-reset API; peak_memory_mb() just reports current usage.
 
 
 def peak_memory_mb(device: str) -> float:
@@ -97,8 +84,7 @@ def peak_memory_mb(device: str) -> float:
     if device == "cuda":
         return torch.cuda.max_memory_allocated() / (1024 * 1024)
     if device == "mps" and hasattr(torch, "mps"):
-        # Best signal we have on MPS — current driver allocation in bytes.
-        # Underreports vs. true peak but better than nothing.
+        # Current driver allocation; underreports true peak but it's all MPS gives.
         if hasattr(torch.mps, "driver_allocated_memory"):
             return torch.mps.driver_allocated_memory() / (1024 * 1024)
     return 0.0
@@ -121,11 +107,8 @@ def empty_cache(device: str) -> None:
 
 
 def supports_amp(device: str) -> bool:
-    """True if torch.autocast + GradScaler are safe on this backend.
-
-    We restrict to CUDA. MPS autocast exists in recent PyTorch but
-    GradScaler does not support MPS, and several segment_anything ops
-    silently fall back to fp32 anyway, so the speedup is unreliable.
+    """CUDA only. MPS has no GradScaler and several SAM ops fall back to fp32,
+    so the speedup is unreliable.
     """
     return device == "cuda"
 
@@ -136,5 +119,5 @@ def supports_pin_memory(device: str) -> bool:
 
 
 def autocast_device_type(device: str) -> str:
-    """Argument for `torch.autocast(device_type=...)`. Falls back to 'cuda' for AMP-disabled calls (the kwarg is required even when enabled=False)."""
+    """device_type arg for torch.autocast (required even when enabled=False)."""
     return "cuda" if device == "cuda" else "cpu"

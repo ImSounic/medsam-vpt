@@ -1,21 +1,20 @@
 #!/usr/bin/env bash
-# Run the CKA-aware LoRA sweep: 3 positions × 3 lambdas × 1 seed = 9 trainings,
+# Run the CKA-aware LoRA sweep: 3 positions x 3 lambdas x 1 seed = 9 trainings,
 # plus 3 evals (one per position covers all 3 lambdas via --checkpoint-glob),
 # plus aggregation.
 #
-# Estimated wall-clock on A10 (probe forward adds ~70% per-epoch overhead):
-#   9 trainings × ~10h each:  ~90h
-#   3 evals × ~1h each:       ~3h
-#   Aggregation:              <5 min
-#   ----------------------------------------------------
+# Rough wall-clock on A10 (probe forward adds ~70% per-epoch overhead):
+#   9 trainings x ~10h:  ~90h
+#   3 evals x ~1h:       ~3h
+#   Aggregation:         <5 min
 #   Total: ~93h (~4 days)
 #
-# Designed to run unattended:
+# Run unattended:
 #   nohup bash cka/run_cka_sweep.sh > cka_sweep.log 2>&1 &
 #   tail -f cka_sweep.log
 #
-# Pipeline halts on first error (set -e). Per-step logs persisted via tee so a
-# failure can be diagnosed without re-running upstream successful steps.
+# Halts on first error (set -e). Per-step logs via tee so a failure can be
+# diagnosed without re-running successful upstream steps.
 
 set -e
 set -u
@@ -26,14 +25,11 @@ echo "[pipeline] working dir: $(pwd)"
 echo "[pipeline] started at:  $(date -Iseconds)"
 echo
 
-# ---------------------------------------------------------------------------
 # Output directories
-# ---------------------------------------------------------------------------
 mkdir -p \
     checkpoints/runs_cka_early checkpoints/runs_cka_mid checkpoints/runs_cka_late \
     cka/results cka/figures
 
-# Section header helper
 section () {
     echo
     echo "============================================================"
@@ -64,35 +60,29 @@ eval_position () {
         --out-csv "$out_csv" 2>&1 | tee "$log_path"
 }
 
-# ---------------------------------------------------------------------------
-# Trainings — 3 positions × 3 lambdas = 9 runs
-# ---------------------------------------------------------------------------
-section "CKA SWEEP — early position (3 lambdas)"
+# Trainings: 3 positions x 3 lambdas = 9 runs
+section "CKA SWEEP - early position (3 lambdas)"
 train lora_cka_early_l01_seed0.yaml  checkpoints/runs_cka_early
 train lora_cka_early_l1_seed0.yaml   checkpoints/runs_cka_early
 train lora_cka_early_l10_seed0.yaml  checkpoints/runs_cka_early
 
-section "CKA SWEEP — mid position (3 lambdas)"
+section "CKA SWEEP - mid position (3 lambdas)"
 train lora_cka_mid_l01_seed0.yaml    checkpoints/runs_cka_mid
 train lora_cka_mid_l1_seed0.yaml     checkpoints/runs_cka_mid
 train lora_cka_mid_l10_seed0.yaml    checkpoints/runs_cka_mid
 
-section "CKA SWEEP — late position (3 lambdas)"
+section "CKA SWEEP - late position (3 lambdas)"
 train lora_cka_late_l01_seed0.yaml   checkpoints/runs_cka_late
 train lora_cka_late_l1_seed0.yaml    checkpoints/runs_cka_late
 train lora_cka_late_l10_seed0.yaml   checkpoints/runs_cka_late
 
-# ---------------------------------------------------------------------------
-# Evals — one invocation per position covers all 3 lambdas via glob
-# ---------------------------------------------------------------------------
-section "CKA SWEEP — standard tight-bbox eval (3 invocations)"
+# Evals: one invocation per position covers all 3 lambdas via glob
+section "CKA SWEEP - standard tight-bbox eval (3 invocations)"
 eval_position early
 eval_position mid
 eval_position late
 
-# ---------------------------------------------------------------------------
-# Aggregate across positions × lambdas
-# ---------------------------------------------------------------------------
+# Aggregate across positions x lambdas
 section "AGGREGATING CKA sweep results"
 python cka/analysis/aggregate_cka_sweep.py
 

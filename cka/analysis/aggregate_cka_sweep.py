@@ -1,26 +1,12 @@
 """Aggregate the 9 CKA-sweep eval CSVs into one comparison table + plots.
 
-Reads:
-  cka/results/runs_cka_early.csv
-  cka/results/runs_cka_mid.csv
-  cka/results/runs_cka_late.csv
-  results/runs.csv                     (for the LoRA pm=0 baseline)
+Reads runs_cka_{early,mid,late}.csv plus results/runs.csv (LoRA pm=0 baseline).
+Each CSV has 3 trainings x 4 datasets; we keep LoRA rows, parse (position, lambda)
+from run_name, and join with the baseline.
 
-Each runs_cka_<position>.csv has 3 trainings × 4 datasets = 12 rows. We extract
-the LoRA rows, parse out (position, lambda) from the run_name, and join with the
-baseline LoRA numbers from the standard runs.csv.
-
-Produces in cka/results/:
-  cka_sweep_summary.csv  — long-form: position, lambda, dataset, dice, hd95, iou,
-                            delta_vs_baseline_dice, etc.
-  cka_sweep_summary.md   — markdown table grouped by dataset
-
-Produces in cka/figures/:
-  cka_sweep_grid.png            — 4 subplots (one per dataset), x=lambda log,
-                                  3 lines (early/mid/late). Baseline dice as
-                                  horizontal dashed line.
-  cka_id_vs_far_ood_tradeoff.png — scatter: x=ISIC dice, y=CBIS dice, one
-                                   point per (position, lambda) + baseline.
+Writes to cka/results/: cka_sweep_summary.csv (long-form) and .md (grouped by dataset).
+Writes to cka/figures/: cka_sweep_grid.png (dice vs lambda per dataset, line per
+position, baseline dashed) and cka_id_vs_far_ood_tradeoff.png (ISIC vs CBIS scatter).
 """
 from __future__ import annotations
 
@@ -41,19 +27,15 @@ LAMBDAS = {"01": 0.1, "1": 1.0, "10": 10.0}
 DATASET_ORDER = ["isic2018_test", "ph2", "busi", "cbis_ddsm"]
 DATASET_LABELS = {
     "isic2018_test": "ISIC 2018 (ID)",
-    "ph2":           "PH² (near-OOD)",
+    "ph2":           "PH2 (near-OOD)",
     "busi":          "BUSI (far-OOD ultrasound)",
     "cbis_ddsm":     "CBIS-DDSM (far-OOD mammography)",
 }
 POSITION_COLORS = {"early": "#1f77b4", "mid": "#ff7f0e", "late": "#d62728"}
 
 
-# ---------------------------------------------------------------------------
-# Loaders
-# ---------------------------------------------------------------------------
-
 def parse_cka_run_name(run_name: str) -> tuple[str, float] | None:
-    """lora_cka_<position>_l<lambda_str>_seed0 -> (position, lambda)."""
+    """lora_cka_<position>_l<lambda_str>_seed0 to (position, lambda)."""
     m = re.match(r"^lora_cka_(early|mid|late)_l([0-9]+)_seed\d+$", run_name)
     if not m:
         return None
@@ -64,16 +46,15 @@ def parse_cka_run_name(run_name: str) -> tuple[str, float] | None:
 
 
 def load_cka_runs() -> pd.DataFrame:
-    """Returns a DataFrame with columns:
-    position, lambda, dataset, dice_mean, iou_mean, hd95_mean."""
+    """DataFrame: position, lambda, dataset, dice_mean, iou_mean, hd95_mean."""
     frames = []
     for position in POSITIONS:
         csv_path = CKA_RESULTS / f"runs_cka_{position}.csv"
         if not csv_path.exists():
-            print(f"[agg-cka] WARNING: {csv_path} not found — skipping {position}")
+            print(f"[agg-cka] WARNING: {csv_path} not found, skipping {position}")
             continue
         df = pd.read_csv(csv_path)
-        # Keep only LoRA rows (CKA sweep is LoRA-only)
+        # Keep only LoRA rows (sweep is LoRA-only)
         df = df[df["method"] == "lora"].copy()
         # Parse (position, lambda) from run_name
         parsed = df["run_name"].apply(parse_cka_run_name)
@@ -88,10 +69,9 @@ def load_cka_runs() -> pd.DataFrame:
 
 
 def load_lora_baseline() -> pd.DataFrame:
-    """Baseline LoRA (pm=0 training, seed 0) dice per dataset. Returns a small
-    DataFrame indexed by dataset."""
+    """Baseline LoRA (pm=0, seed 0) dice per dataset, as a small DataFrame."""
     if not BASELINE_CSV.exists():
-        print(f"[agg-cka] WARNING: {BASELINE_CSV} not found — baseline unavailable")
+        print(f"[agg-cka] WARNING: {BASELINE_CSV} not found, baseline unavailable")
         return pd.DataFrame()
     df = pd.read_csv(BASELINE_CSV)
     df = df[(df["method"] == "lora") & (df["run_name"] == "lora_seed0")]
@@ -99,10 +79,6 @@ def load_lora_baseline() -> pd.DataFrame:
         return pd.DataFrame()
     return df[["dataset", "dice_mean", "iou_mean", "hd95_mean"]].copy()
 
-
-# ---------------------------------------------------------------------------
-# Summary
-# ---------------------------------------------------------------------------
 
 def write_summary_csv(cka_df: pd.DataFrame, baseline_df: pd.DataFrame,
                       out_path: Path) -> None:
@@ -142,10 +118,10 @@ def write_summary_md(cka_df: pd.DataFrame, baseline_df: pd.DataFrame,
         for _, r in baseline_df.iterrows():
             base_lookup[r["dataset"]] = float(r["dice_mean"])
 
-    lines = ["# CKA-aware LoRA sweep — Dice results\n",
+    lines = ["# CKA-aware LoRA sweep - Dice results\n",
              "Single seed (seed=0), 6 epochs each. Position = which decoder layers "
-             "are CKA-regularised. λ = strength of the CKA loss term.\n",
-             "Δ vs baseline = CKA-aware Dice − baseline LoRA (pm=0 training, seed 0).\n"]
+             "are CKA-regularised. lambda = strength of the CKA loss term.\n",
+             "Delta vs baseline = CKA-aware Dice minus baseline LoRA (pm=0, seed 0).\n"]
 
     for ds in DATASET_ORDER:
         sub = cka_df[cka_df["dataset"] == ds]
@@ -155,7 +131,7 @@ def write_summary_md(cka_df: pd.DataFrame, baseline_df: pd.DataFrame,
         baseline = base_lookup.get(ds, float("nan"))
         if not np.isnan(baseline):
             lines.append(f"Baseline LoRA dice = **{baseline:.4f}**\n")
-        lines.append("| Position | λ | Dice | Δ vs baseline | HD95 (px) | IoU |")
+        lines.append("| Position | lambda | Dice | Delta vs baseline | HD95 (px) | IoU |")
         lines.append("|---|---:|---:|---:|---:|---:|")
         for position in POSITIONS:
             for lam_val in sorted(LAMBDAS.values()):
@@ -165,7 +141,7 @@ def write_summary_md(cka_df: pd.DataFrame, baseline_df: pd.DataFrame,
                 r = row.iloc[0]
                 dice = float(r["dice_mean"])
                 delta = dice - baseline if not np.isnan(baseline) else float("nan")
-                delta_str = f"{delta:+.4f}" if not np.isnan(delta) else "—"
+                delta_str = f"{delta:+.4f}" if not np.isnan(delta) else "-"
                 lines.append(
                     f"| {position} | {lam_val:g} | {dice:.4f} | {delta_str} | "
                     f"{float(r['hd95_mean']):.2f} | {float(r['iou_mean']):.4f} |"
@@ -174,10 +150,6 @@ def write_summary_md(cka_df: pd.DataFrame, baseline_df: pd.DataFrame,
         f.write("\n".join(lines))
     print(f"[agg-cka] wrote {out_path}")
 
-
-# ---------------------------------------------------------------------------
-# Plots
-# ---------------------------------------------------------------------------
 
 def plot_sweep_grid(cka_df: pd.DataFrame, baseline_df: pd.DataFrame,
                     out_path: Path) -> None:
@@ -204,13 +176,13 @@ def plot_sweep_grid(cka_df: pd.DataFrame, baseline_df: pd.DataFrame,
             ax.axhline(baseline, color="black", linestyle="--", linewidth=1.2,
                        alpha=0.6, label=f"LoRA baseline ({baseline:.3f})")
         ax.set_xscale("log")
-        ax.set_xlabel("λ (CKA loss weight)")
+        ax.set_xlabel("lambda (CKA loss weight)")
         ax.set_ylabel("Dice")
         ax.set_title(DATASET_LABELS.get(ds, ds), fontsize=12)
         ax.grid(alpha=0.3)
         ax.legend(loc="best", fontsize=9)
 
-    fig.suptitle("LoRA + CKA regularisation: Dice vs λ for each decoder-hook position",
+    fig.suptitle("LoRA + CKA regularisation: Dice vs lambda for each decoder-hook position",
                  fontsize=13, y=1.00)
     fig.tight_layout()
     fig.savefig(out_path, dpi=130, bbox_inches="tight")
@@ -235,7 +207,7 @@ def plot_tradeoff(cka_df: pd.DataFrame, baseline_df: pd.DataFrame,
                 y = float(cbis.loc[(position, lam), "dice_mean"])
             except KeyError:
                 continue
-            xs.append(x); ys.append(y); labels.append(f"λ={lam:g}")
+            xs.append(x); ys.append(y); labels.append(f"lambda={lam:g}")
         if not xs:
             continue
         ax.plot(xs, ys, marker="o", linewidth=1.4, markersize=12,
@@ -266,10 +238,6 @@ def plot_tradeoff(cka_df: pd.DataFrame, baseline_df: pd.DataFrame,
     plt.close(fig)
     print(f"[agg-cka] wrote {out_path}")
 
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 def main() -> int:
     CKA_FIGS.mkdir(parents=True, exist_ok=True)

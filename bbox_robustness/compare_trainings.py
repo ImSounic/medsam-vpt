@@ -1,21 +1,9 @@
-"""Three-way comparison: pm=0, pm=20, rand100 trained models — MULTI-SEED.
+"""Three-way comparison of pm=0, pm=20, rand100 trained models, multi-seed.
 
-Reads:
-  summary_full_multiseed.csv  (produced by scripts/aggregate_seeds.py)
-
-Produces in bbox_robustness/comparison/:
-  comparison_curves_3way.png    — overlay curves with ±std shaded bands
-  delta_heatmap_3way.png        — two rows of delta heatmaps (vs pm=0 baseline)
-                                  with bolded cells where |Δ| > 2·max(σ)
-  tradeoff_id_vs_perturbation.png — scatter (ISIC tight vs ISIC pm=200) with error bars
-  tradeoff_isic_vs_cbis.png     — scatter (ISIC tight vs CBIS-DDSM tight) with error bars
-  multi_heatmap_3way.png        — 4 datasets × 3 trainings full Dice surface
-  bars_tight_bbox.png           — grouped bars at pm=0 with error bars
-  bars_extreme_perturb.png      — grouped bars at pm=200 with error bars
-  delta_summary_bars.png        — Δ from pm=0 baseline averaged across perturbs, error bars
-  comparison_summary_3way_multiseed.csv  — long-form summary with mean + std
-
-All numbers are mean over seeds 0, 1, 2 with shaded bands / error bars at ±1 σ.
+Reads summary_full_multiseed.csv (from scripts/aggregate_seeds.py) and writes
+overlay curves, delta heatmaps, trade-off scatters, a full Dice surface, bar
+charts, and a long-form summary CSV into bbox_robustness/comparison/.
+All numbers are mean over seeds 0,1,2 with bands/error bars at +/-1 sigma.
 """
 from __future__ import annotations
 
@@ -70,17 +58,13 @@ DATASET_ORDER = ["isic2018_test", "ph2", "busi", "cbis_ddsm"]
 PERTURBS = [0, 20, 50, 100, 200]
 
 
-# ---------------------------------------------------------------------------
-# Load
-# ---------------------------------------------------------------------------
-
 def load_multiseed() -> pd.DataFrame:
     """Returns DataFrame with columns:
        method, training, dataset, perturb_max_px, dice_mean, dice_std, n_seeds
     """
     if not INPUT_CSV.exists():
         raise FileNotFoundError(
-            f"{INPUT_CSV} not found — run `python scripts/aggregate_seeds.py` first."
+            f"{INPUT_CSV} not found; run `python scripts/aggregate_seeds.py` first."
         )
     df = pd.read_csv(INPUT_CSV)
     df = df.rename(columns={
@@ -100,10 +84,6 @@ def lookup(df: pd.DataFrame, method: str, training: str, dataset: str,
         return None
     return float(sub["dice_mean"].iloc[0]), float(sub["dice_std"].iloc[0])
 
-
-# ---------------------------------------------------------------------------
-# Plot 1: overlay curves with ±std bands
-# ---------------------------------------------------------------------------
 
 def plot_overlay_curves(df: pd.DataFrame, out_path: Path) -> None:
     fig, axes = plt.subplots(2, 2, figsize=(15, 11), sharex=True, sharey=False)
@@ -140,7 +120,7 @@ def plot_overlay_curves(df: pd.DataFrame, out_path: Path) -> None:
 
         ax.set_title(DATASET_LABELS.get(ds, ds), fontsize=12)
         ax.set_xlabel("Eval-time bbox max expansion (px)")
-        ax.set_ylabel("Dice (mean ± std over 3 seeds)")
+        ax.set_ylabel("Dice (mean +/- std over 3 seeds)")
         ax.grid(alpha=0.3)
         ax.set_xticks(PERTURBS)
 
@@ -161,8 +141,8 @@ def plot_overlay_curves(df: pd.DataFrame, out_path: Path) -> None:
                loc="lower center", ncol=5, frameon=False,
                bbox_to_anchor=(0.5, -0.04), fontsize=10)
     fig.suptitle(
-        "Bbox robustness across three training conditions (3 seeds, ±std shaded)  "
-        "— solid pm=0, dashed pm=20, dotted rand100",
+        "Bbox robustness across three training conditions (3 seeds, +/-std shaded)  "
+        "(solid pm=0, dashed pm=20, dotted rand100)",
         fontsize=13, y=1.00,
     )
     fig.tight_layout()
@@ -171,14 +151,10 @@ def plot_overlay_curves(df: pd.DataFrame, out_path: Path) -> None:
     print(f"[compare] wrote {out_path}")
 
 
-# ---------------------------------------------------------------------------
-# Plot 2: dual delta heatmap with bold annotation for |Δ| > 2σ
-# ---------------------------------------------------------------------------
-
 def plot_delta_heatmap(df: pd.DataFrame, out_path: Path) -> None:
-    """Top row: ΔDice (pm=20 trained − pm=0 trained), 4 panels per dataset
-       Bottom row: ΔDice (rand100 trained − pm=0 trained)
-       Cells where |Δ| > 2·sqrt(σ_target² + σ_baseline²) get bold annotation.
+    """Two rows of delta-Dice heatmaps vs the pm=0 baseline (top pm=20, bottom
+    rand100), one panel per dataset. Cells where |delta| exceeds 2x pooled sigma
+    get a bold annotation.
     """
     fig, axes = plt.subplots(2, len(DATASET_ORDER), figsize=(20, 9),
                              sharex=True, sharey=True)
@@ -201,7 +177,7 @@ def plot_delta_heatmap(df: pd.DataFrame, out_path: Path) -> None:
                     delta = a[0] - b[0]
                     pooled = float(np.sqrt(a[1]**2 + b[1]**2))
                     delta_grid[i, j] = delta
-                    # 2-sigma: ~95% CI exclusion of zero
+                    # 2-sigma ~ 95% CI excludes zero
                     sig_grid[i, j] = abs(delta) > 2 * max(pooled, 1e-9)
 
             im = ax.imshow(delta_grid, cmap="RdBu_r",
@@ -213,7 +189,7 @@ def plot_delta_heatmap(df: pd.DataFrame, out_path: Path) -> None:
             if row_i == 1:
                 ax.set_xlabel("Eval bbox max expansion (px)")
             if col_i == 0:
-                ax.set_ylabel(f"{target} train\n− pm=0 train", fontsize=11, fontweight="bold")
+                ax.set_ylabel(f"{target} train\n- pm=0 train", fontsize=11, fontweight="bold")
             if row_i == 0:
                 ax.set_title(DATASET_LABELS.get(ds, ds), fontsize=11)
 
@@ -229,20 +205,16 @@ def plot_delta_heatmap(df: pd.DataFrame, out_path: Path) -> None:
                             fontsize=7.8, fontweight=weight)
 
     cbar = fig.colorbar(im, ax=axes.ravel().tolist(), fraction=0.018, pad=0.02)
-    cbar.set_label("ΔDice (target − pm=0 baseline)  —  bold = |Δ| > 2σ_pooled")
+    cbar.set_label("delta Dice (target - pm=0 baseline)  -  bold = |delta| > 2 sigma_pooled")
     fig.suptitle(
-        "Effect of bbox jitter training on Dice (3 seeds, bold cells exceed 2σ)  "
-        "—  top: pm=20, bottom: rand100",
+        "Effect of bbox jitter training on Dice (3 seeds, bold cells exceed 2 sigma)  "
+        "(top: pm=20, bottom: rand100)",
         fontsize=13, y=0.99,
     )
     fig.savefig(out_path, dpi=130, bbox_inches="tight")
     plt.close(fig)
     print(f"[compare] wrote {out_path}")
 
-
-# ---------------------------------------------------------------------------
-# Plot 3 & 4: trade-off scatters with error bars
-# ---------------------------------------------------------------------------
 
 def _scatter_with_errorbars(ax, df, x_query, y_query, lims_x, lims_y,
                             xlabel, ylabel, title, draw_diag: bool):
@@ -306,8 +278,8 @@ def plot_tradeoff_id_vs_perturbation(df: pd.DataFrame, out_path: Path) -> None:
         lims_x=(0.65, 0.97), lims_y=(0.65, 0.90),
         xlabel="ISIC Dice at tight bbox (pm=0)",
         ylabel="ISIC Dice at extreme perturbation (pm=200)",
-        title="Trade-off: tight-bbox accuracy vs prompt robustness (ISIC, 3 seeds, error bars = ±1σ)\n"
-              "↗ upper-right corner = better at both",
+        title="Trade-off: tight-bbox accuracy vs prompt robustness (ISIC, 3 seeds, error bars = +/-1 sigma)\n"
+              "upper-right corner = better at both",
         draw_diag=True,
     )
     fig.tight_layout()
@@ -325,7 +297,7 @@ def plot_tradeoff_modality(df: pd.DataFrame, out_path: Path) -> None:
         lims_x=(0.85, 0.97), lims_y=(0.10, 0.90),
         xlabel="ISIC Dice at tight bbox (ID, dermoscopy)",
         ylabel="CBIS-DDSM Dice at tight bbox (far-OOD, mammography)",
-        title="Modality-transfer trade-off (3 seeds, error bars = ±1σ)\n"
+        title="Modality-transfer trade-off (3 seeds, error bars = +/-1 sigma)\n"
               "right-down = ID-specialised, up = better modality transfer",
         draw_diag=False,
     )
@@ -334,10 +306,6 @@ def plot_tradeoff_modality(df: pd.DataFrame, out_path: Path) -> None:
     plt.close(fig)
     print(f"[compare] wrote {out_path}")
 
-
-# ---------------------------------------------------------------------------
-# Plot 5: multi-heatmap, 4 datasets × 3 trainings, Dice means
-# ---------------------------------------------------------------------------
 
 def plot_multi_heatmap_3way(df: pd.DataFrame, out_path: Path) -> None:
     n_rows = len(DATASET_ORDER)
@@ -390,17 +358,13 @@ def plot_multi_heatmap_3way(df: pd.DataFrame, out_path: Path) -> None:
     cbar = fig.colorbar(im, ax=axes.ravel().tolist(), fraction=0.018, pad=0.02)
     cbar.set_label("Dice (mean over 3 seeds)", fontsize=11)
     fig.suptitle(
-        "Full experiment matrix: Dice across methods × datasets × perturb × trainings (3 seeds)",
+        "Full experiment matrix: Dice across methods x datasets x perturb x trainings (3 seeds)",
         fontsize=13, y=1.00,
     )
     fig.savefig(out_path, dpi=130, bbox_inches="tight")
     plt.close(fig)
     print(f"[compare] wrote {out_path}")
 
-
-# ---------------------------------------------------------------------------
-# Plot 6 / 7: grouped bars with error bars
-# ---------------------------------------------------------------------------
 
 def _grouped_bars_panel(ax, df, ds: str, perturb: int) -> None:
     bar_w = 0.26
@@ -450,7 +414,7 @@ def plot_bars_perturb(df: pd.DataFrame, out_path: Path, perturb: int,
     fig.legend(handles=handles, loc="lower center", ncol=3, frameon=False,
                bbox_to_anchor=(0.5, -0.02), fontsize=11)
     fig.suptitle(
-        f"Dice by method × training condition  —  {title_suffix}  (3 seeds, ±1σ error bars)",
+        f"Dice by method x training condition  -  {title_suffix}  (3 seeds, +/-1 sigma error bars)",
         fontsize=13, y=1.00,
     )
     fig.tight_layout()
@@ -458,10 +422,6 @@ def plot_bars_perturb(df: pd.DataFrame, out_path: Path, perturb: int,
     plt.close(fig)
     print(f"[compare] wrote {out_path}")
 
-
-# ---------------------------------------------------------------------------
-# Plot 8: Δ summary bars (averaged over perturb levels) with propagated error
-# ---------------------------------------------------------------------------
 
 def plot_delta_summary_bars(df: pd.DataFrame, out_path: Path) -> None:
     fig, axes = plt.subplots(2, 2, figsize=(15, 10), sharey=True)
@@ -492,7 +452,7 @@ def plot_delta_summary_bars(df: pd.DataFrame, out_path: Path) -> None:
                     var100.append(t100[1]**2 + base[1]**2)
             d_pm20.append(np.mean(deltas20) if deltas20 else np.nan)
             d_r100.append(np.mean(deltas100) if deltas100 else np.nan)
-            # SE of the mean Δ across perturbs: sqrt(mean of pooled variances) / sqrt(n)
+            # error bar = sqrt(mean of pooled variances) across perturbs
             s_pm20.append(np.sqrt(np.mean(var20)) if var20 else np.nan)
             s_r100.append(np.sqrt(np.mean(var100)) if var100 else np.nan)
 
@@ -500,11 +460,11 @@ def plot_delta_summary_bars(df: pd.DataFrame, out_path: Path) -> None:
         ax.bar(x_positions - bar_w / 2, d_pm20, width=bar_w, yerr=s_pm20,
                color=palette["pm=20"], edgecolor="black", linewidth=0.5,
                capsize=3, error_kw={"elinewidth": 0.8, "ecolor": "#333"},
-               label="pm=20 − pm=0")
+               label="pm=20 - pm=0")
         ax.bar(x_positions + bar_w / 2, d_r100, width=bar_w, yerr=s_r100,
                color=palette["rand100"], edgecolor="black", linewidth=0.5,
                capsize=3, error_kw={"elinewidth": 0.8, "ecolor": "#333"},
-               label="rand100 − pm=0")
+               label="rand100 - pm=0")
         for x, v in zip(x_positions - bar_w / 2, d_pm20):
             if not np.isnan(v):
                 ax.text(x, v + (0.005 if v >= 0 else -0.012), f"{v:+.2f}",
@@ -519,19 +479,19 @@ def plot_delta_summary_bars(df: pd.DataFrame, out_path: Path) -> None:
         ax.set_xticklabels([METHOD_LABELS[m] for m in plot_methods],
                            rotation=20, ha="right")
         ax.set_title(DATASET_LABELS.get(ds, ds), fontsize=12)
-        ax.set_ylabel("ΔDice (averaged across 5 perturb levels)")
+        ax.set_ylabel("delta Dice (averaged across 5 perturb levels)")
         ax.grid(axis="y", alpha=0.3)
         ax.set_ylim(-0.45, 0.20)
 
     handles = [
-        plt.Rectangle((0, 0), 1, 1, color="#ff7f0e", ec="black", label="pm=20 trained − pm=0 baseline"),
-        plt.Rectangle((0, 0), 1, 1, color="#2ca02c", ec="black", label="rand100 trained − pm=0 baseline"),
+        plt.Rectangle((0, 0), 1, 1, color="#ff7f0e", ec="black", label="pm=20 trained - pm=0 baseline"),
+        plt.Rectangle((0, 0), 1, 1, color="#2ca02c", ec="black", label="rand100 trained - pm=0 baseline"),
     ]
     fig.legend(handles=handles, loc="lower center", ncol=2, frameon=False,
                bbox_to_anchor=(0.5, -0.02), fontsize=11)
     fig.suptitle(
-        "Average ΔDice from pm=0 baseline (3 seeds, error bars = pooled σ)  "
-        "— positive = jitter helped, negative = it hurt",
+        "Average delta Dice from pm=0 baseline (3 seeds, error bars = pooled sigma)  "
+        "(positive = jitter helped, negative = it hurt)",
         fontsize=13, y=1.00,
     )
     fig.tight_layout()
@@ -539,10 +499,6 @@ def plot_delta_summary_bars(df: pd.DataFrame, out_path: Path) -> None:
     plt.close(fig)
     print(f"[compare] wrote {out_path}")
 
-
-# ---------------------------------------------------------------------------
-# Long-form 3-way multiseed summary CSV
-# ---------------------------------------------------------------------------
 
 def write_summary_3way(df: pd.DataFrame, out_path: Path) -> None:
     """One row per (method, dataset, perturb_max_px) with mean+std columns
@@ -579,17 +535,13 @@ def write_summary_3way(df: pd.DataFrame, out_path: Path) -> None:
     print(f"[compare] wrote {out_path}")
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
 def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     df = load_multiseed()
     n_cells = len(df)
     print(f"[compare] loaded {n_cells} multiseed cells "
-          f"({df['method'].nunique()} methods × {df['dataset'].nunique()} datasets × "
-          f"{df['perturb_max_px'].nunique()} perturbs × {df['training'].nunique()} trainings)")
+          f"({df['method'].nunique()} methods x {df['dataset'].nunique()} datasets x "
+          f"{df['perturb_max_px'].nunique()} perturbs x {df['training'].nunique()} trainings)")
 
     plot_overlay_curves(df,            OUT_DIR / "comparison_curves_3way.png")
     plot_delta_heatmap(df,             OUT_DIR / "delta_heatmap_3way.png")

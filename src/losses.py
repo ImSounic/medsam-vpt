@@ -1,9 +1,7 @@
 """Segmentation losses.
 
-DiceBCELoss = (1-w)*BCE + w*Dice on a single binary mask channel.
-Standard recipe for medical segmentation. BCE pushes pixel-wise correctness;
-Dice pushes overlap, which matters when the foreground is small (most ISIC
-lesions cover <30% of the image).
+DiceBCELoss = (1-w)*BCE + w*Dice on a single binary mask channel. Dice helps
+when the foreground is small (most ISIC lesions cover <30% of the image).
 """
 from __future__ import annotations
 

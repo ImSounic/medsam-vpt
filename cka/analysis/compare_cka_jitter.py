@@ -1,27 +1,13 @@
 """Compare CKA-aware LoRA across 3 bbox-jitter training regimes.
 
-Cross product: {without CKA, with CKA late_l10} × {pm=0, pm=20, rand100} = 6 conditions.
+Cross product: {no CKA, CKA late_l10} x {pm=0, pm=20, rand100} = 6 conditions.
 
-Inputs:
-    summary_full_multiseed.csv  — baseline LoRA (no CKA) across 3 trainings, multi-seed
-    cka/results/runs_cka_oodonly_late.csv          — CKA pm=0 trained
-    cka/results/runs_cka_oodonly_late_l10_pm20.csv     — CKA pm=20 trained
-    cka/results/runs_cka_oodonly_late_l10_rand100.csv  — CKA rand100 trained
+Inputs: summary_full_multiseed.csv (no-CKA baseline), the runs_cka_oodonly_late*
+eval CSVs (CKA tight-bbox), and bbox_robustness/results*/runs.csv (robustness
+curves for both no-CKA and CKA).
 
-    bbox_robustness/results_seed0/runs.csv         — no-CKA pm=0 trained, bbox robustness
-    bbox_robustness/results_pm20/runs.csv          — no-CKA pm=20 trained, bbox robustness
-    bbox_robustness/results_rand100/runs.csv       — no-CKA rand100 trained, bbox robustness
-    bbox_robustness/results_cka_oodonly_late_l10_pm20/runs.csv      — CKA pm=20 trained
-    bbox_robustness/results_cka_oodonly_late_l10_rand100/runs.csv   — CKA rand100 trained
-
-Outputs (cka/figures/):
-    cka_jitter_tight_bbox_bars.png        — 4 panels (dataset), grouped bars: 3 trainings × CKA on/off
-    cka_jitter_robustness_curves.png      — 4 panels (dataset), curves: 6 conditions vs perturb level
-    cka_jitter_tradeoff_scatter.png       — ID vs far-OOD scatter
-    cka_jitter_delta_heatmap.png          — Δ(CKA - no-CKA) per training per dataset
-
-    cka/results/cka_jitter_comparison.csv  — long-form summary
-    cka/results/cka_jitter_comparison.md   — markdown summary
+Outputs to cka/figures/: tight_bbox_bars, robustness_curves, tradeoff_scatter,
+delta_heatmap. Plus cka/results/cka_jitter_comparison.{csv,md}.
 """
 from __future__ import annotations
 
@@ -40,7 +26,7 @@ BBOX_ROBUST_DIR = REPO_ROOT / "bbox_robustness"
 DATASETS = ["isic2018_test", "ph2", "busi", "cbis_ddsm"]
 DATASET_LABELS = {
     "isic2018_test": "ISIC 2018 (ID)",
-    "ph2":           "PH² (near-OOD)",
+    "ph2":           "PH2 (near-OOD)",
     "busi":          "BUSI (far-OOD ultrasound)",
     "cbis_ddsm":     "CBIS-DDSM (far-OOD X-ray)",
 }
@@ -49,10 +35,7 @@ TRAINING_COLORS = {"pm=0": "#1f77b4", "pm=20": "#ff7f0e", "rand100": "#2ca02c"}
 PERTURBS = [0, 20, 50, 100, 200]
 
 
-# ---------------------------------------------------------------------------
 # Load no-CKA baseline LoRA across the 3 trainings (multi-seed if available)
-# ---------------------------------------------------------------------------
-
 def load_no_cka_tight() -> dict[tuple[str, str], float]:
     """Returns {(training, dataset) -> dice} at tight bbox (pm=0 eval) for plain LoRA."""
     multiseed_csv = REPO_ROOT / "summary_full_multiseed.csv"
@@ -101,10 +84,7 @@ def load_no_cka_bbox_robust() -> dict[tuple[str, str, int], float]:
     return out
 
 
-# ---------------------------------------------------------------------------
 # Load CKA late_l10 results across the 3 trainings
-# ---------------------------------------------------------------------------
-
 def _extract_cka_tight_from_eval_csv(csv_path: Path, run_name_substr: str) -> dict[str, float]:
     """{dataset -> dice} for the single CKA run inside an eval CSV."""
     if not csv_path.exists():
@@ -118,7 +98,7 @@ def _extract_cka_tight_from_eval_csv(csv_path: Path, run_name_substr: str) -> di
 
 def load_cka_tight() -> dict[tuple[str, str], float]:
     out: dict[tuple[str, str], float] = {}
-    # pm=0 trained: from the OOD-only late position CSV (3 lambdas, we take l10)
+    # pm=0 trained: from the OOD-only late CSV (3 lambdas, take l10)
     pm0 = _extract_cka_tight_from_eval_csv(
         RESULTS_DIR / "runs_cka_oodonly_late.csv",
         "lora_cka_oodonly_late_l10_seed0",
@@ -160,10 +140,7 @@ def load_cka_bbox_robust() -> dict[tuple[str, str, int], float]:
     return out
 
 
-# ---------------------------------------------------------------------------
-# Plot 1: Tight-bbox grouped bars per dataset
-# ---------------------------------------------------------------------------
-
+# Plot 1: tight-bbox grouped bars per dataset
 def plot_tight_bars(no_cka: dict, cka: dict, out_path: Path) -> None:
     fig, axes = plt.subplots(1, 4, figsize=(18, 6))
     x = np.arange(len(TRAININGS))
@@ -195,7 +172,7 @@ def plot_tight_bars(no_cka: dict, cka: dict, out_path: Path) -> None:
             ax.legend(loc="lower right", fontsize=9)
 
     fig.suptitle("CKA-aware late_l10 vs baseline LoRA across 3 bbox-jitter trainings\n"
-                 "(tight-bbox eval, single seed for CKA / multi-seed avg for no-CKA)",
+                 "(tight-bbox eval, single seed for CKA, multi-seed avg for no-CKA)",
                  fontsize=13, y=1.02)
     fig.tight_layout()
     fig.savefig(out_path, dpi=130, bbox_inches="tight")
@@ -203,14 +180,11 @@ def plot_tight_bars(no_cka: dict, cka: dict, out_path: Path) -> None:
     print(f"[compare] wrote {out_path}")
 
 
-# ---------------------------------------------------------------------------
-# Plot 2: Bbox robustness curves per dataset
-# ---------------------------------------------------------------------------
-
+# Plot 2: bbox robustness curves per dataset
 def plot_robustness_curves(no_cka_robust: dict, cka_robust: dict,
                            no_cka_tight: dict, cka_tight: dict,
                            out_path: Path) -> None:
-    """4 panels (one per dataset). x = perturb level. 6 lines (3 trainings × CKA on/off)."""
+    """4 panels (one per dataset). x = perturb level. 6 lines (3 trainings x CKA on/off)."""
     fig, axes = plt.subplots(2, 2, figsize=(14, 10), sharex=True)
     axes_flat = axes.flatten()
 
@@ -255,10 +229,7 @@ def plot_robustness_curves(no_cka_robust: dict, cka_robust: dict,
     print(f"[compare] wrote {out_path}")
 
 
-# ---------------------------------------------------------------------------
-# Plot 3: ID vs far-OOD trade-off scatter (using ISIC tight × CBIS tight)
-# ---------------------------------------------------------------------------
-
+# Plot 3: ID vs far-OOD trade-off scatter (ISIC tight vs CBIS tight)
 def plot_tradeoff(no_cka_tight: dict, cka_tight: dict, out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(10, 9))
 
@@ -281,7 +252,7 @@ def plot_tradeoff(no_cka_tight: dict, cka_tight: dict, out_path: Path) -> None:
             ax.annotate(f"CKA\n{training}", (x, y), xytext=(7, -22),
                         textcoords="offset points", fontsize=9, fontweight="bold")
 
-        # Connect the matched pairs with a thin arrow
+        # Connect the matched pair with a thin arrow
         x0 = no_cka_tight.get((training, "isic2018_test"), float("nan"))
         y0 = no_cka_tight.get((training, "cbis_ddsm"), float("nan"))
         x1 = cka_tight.get((training, "isic2018_test"), float("nan"))
@@ -317,10 +288,7 @@ def plot_tradeoff(no_cka_tight: dict, cka_tight: dict, out_path: Path) -> None:
     print(f"[compare] wrote {out_path}")
 
 
-# ---------------------------------------------------------------------------
-# Plot 4: Δ-heatmap (CKA - no_CKA) per (training, dataset)
-# ---------------------------------------------------------------------------
-
+# Plot 4: delta heatmap (CKA - no_CKA) per (training, dataset)
 def plot_delta_heatmap(no_cka_tight: dict, cka_tight: dict, out_path: Path) -> None:
     grid = np.zeros((len(TRAININGS), len(DATASETS)))
     for i, training in enumerate(TRAININGS):
@@ -344,8 +312,8 @@ def plot_delta_heatmap(no_cka_tight: dict, cka_tight: dict, out_path: Path) -> N
             ax.text(j, i, f"{val:+.4f}", ha="center", va="center",
                     color=color, fontsize=11, fontweight="bold")
     cbar = fig.colorbar(im, ax=ax, fraction=0.05, pad=0.04)
-    cbar.set_label("ΔDice (CKA − no CKA)")
-    ax.set_title("ΔDice from adding CKA late_l10 regularization, per training × dataset\n"
+    cbar.set_label("Delta Dice (CKA - no CKA)")
+    ax.set_title("Delta Dice from adding CKA late_l10, per training x dataset\n"
                  "Red = CKA helps, Blue = CKA hurts",
                  fontsize=12)
     fig.tight_layout()
@@ -353,10 +321,6 @@ def plot_delta_heatmap(no_cka_tight: dict, cka_tight: dict, out_path: Path) -> N
     plt.close(fig)
     print(f"[compare] wrote {out_path}")
 
-
-# ---------------------------------------------------------------------------
-# Summary CSV + MD
-# ---------------------------------------------------------------------------
 
 def write_summary(no_cka_tight: dict, cka_tight: dict, out_csv: Path, out_md: Path) -> None:
     rows = []
@@ -378,10 +342,10 @@ def write_summary(no_cka_tight: dict, cka_tight: dict, out_csv: Path, out_md: Pa
 
     lines = ["# CKA late_l10 effect across bbox-jitter trainings\n",
              "Single seed for CKA, multi-seed avg for no-CKA baseline.\n\n",
-             "| Training | Dataset | No-CKA Dice | CKA Dice | Δ |",
+             "| Training | Dataset | No-CKA Dice | CKA Dice | Delta |",
              "|---|---|---:|---:|---:|"]
     for r in rows:
-        delta_str = (f"{float(r['delta']):+.4f}" if r['delta'] != "" else "—")
+        delta_str = (f"{float(r['delta']):+.4f}" if r['delta'] != "" else "-")
         lines.append(
             f"| {r['training']} | {DATASET_LABELS[r['dataset']]} | "
             f"{r['no_cka_dice']} | {r['cka_dice']} | {delta_str} |"
@@ -398,11 +362,11 @@ def write_summary(no_cka_tight: dict, cka_tight: dict, out_csv: Path, out_md: Pa
         cbis_d = next((float(r['delta']) for r in rows
                        if r['training'] == training and r['dataset'] == 'cbis_ddsm'
                        and r['delta'] != ''), float('nan'))
-        helps = "✅" if (not np.isnan(cbis_d) and cbis_d > 0) else "❌"
+        helps = "yes" if (not np.isnan(cbis_d) and cbis_d > 0) else "no"
         notes = ""
         if training == "rand100":
             notes = "CKA + heavy random jitter overfits"
-        lines.append(f"| {training} | BUSI {busi_d:+.4f}, CBIS {cbis_d:+.4f} → {helps} | {notes} |")
+        lines.append(f"| {training} | BUSI {busi_d:+.4f}, CBIS {cbis_d:+.4f} -> {helps} | {notes} |")
 
     with open(out_md, "w") as f:
         f.write("\n".join(lines))

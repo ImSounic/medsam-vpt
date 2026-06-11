@@ -1,12 +1,10 @@
-"""Training entry point. Method-agnostic — drives decoder-only, VPT, LoRA, full FT.
+"""Training entry point. Method-agnostic: decoder-only, VPT, LoRA, full FT.
 
 Usage:
     python -m src.train --config configs/decoder_only.yaml
 
-The script saves only trainable parameters in the checkpoint, not the full
-93M-param state dict — so decoder-only checkpoints are ~16 MB, VPT
-checkpoints will be ~16 MB (decoder + tiny prompts), and full FT will be
-~370 MB.
+Checkpoints store only trainable params, not the full 93M state dict, so
+decoder-only/VPT checkpoints are ~16 MB and full FT is ~370 MB.
 """
 from __future__ import annotations
 
@@ -47,8 +45,8 @@ from src.models.methods import encoder_in_grad_path, setup_method
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# Set by main() once the device is picked. Used by train_one_epoch/validate
-# as the device_type kwarg to torch.autocast (required even when disabled).
+# Set by main() once the device is picked. device_type kwarg for torch.autocast
+# (required even when disabled).
 _AUTOCAST_DEVICE = "cuda"
 
 
@@ -102,7 +100,7 @@ def forward_with_prompt(
             dense_prompt_embeddings=dense,
             multimask_output=False,
         )
-        # Upsample low-res (256x256) to image size (HxW) for loss / metric
+        # Upsample low-res (256x256) to image size (HxW) for loss/metric
         masks_out.append(
             F.interpolate(low_res, size=(H, W), mode="bilinear", align_corners=False)
         )
@@ -116,21 +114,18 @@ def train_one_epoch(
 ) -> dict:
     """Train one epoch.
 
-    cka_ctx, when provided, enables CKA-aware training. It must contain:
+    cka_ctx, when provided, enables CKA-aware training. Keys:
         probe_batch    : dict from build_probe_batch (image, bbox, image_id)
         base_acts      : dict[layer_name -> Tensor] from cache_base_activations
         hook_handle    : HookHandle attached to `sam`
-        lambda_cka     : float, overall weight of L_CKA in the total loss
+        lambda_cka     : overall weight of L_CKA in the total loss
         layer_weights  : dict[layer_name -> float] per-layer weight inside L_CKA
-        encoder_chunk  : int, probe encoder micro-batch size
-        use_grad_checkpoint : bool, per-block checkpointing on probe encoder
+        encoder_chunk  : probe encoder micro-batch size
+        use_grad_checkpoint : per-block checkpointing on probe encoder
 
-    Memory-saving design: task and CKA backward are done SEPARATELY, with the
-    task graph freed before the probe forward starts. Mathematically equivalent
-    to one combined `(task + λ·cka).backward()` (gradients are linear), but
-    halves peak memory because we never hold both autograd graphs alive at the
-    same time. Without this split, the combined graph OOMs a 22 GB A10 even
-    at chunk=4 with checkpointing.
+    Task and CKA backward run separately, freeing the task graph before the
+    probe forward. Same result as one combined backward (gradients are linear)
+    but halves peak memory; the combined graph OOMs a 22 GB A10 even at chunk=4.
     """
     sam.train()
     losses, bces, dlosses, cka_losses = [], [], [], []
@@ -146,7 +141,7 @@ def train_one_epoch(
 
         optimizer.zero_grad(set_to_none=True)
 
-        # ---------- Task: forward + backward (frees train graph) ----------
+        # Task: forward + backward (frees train graph)
         with torch.autocast(device_type=_AUTOCAST_DEVICE, enabled=amp):
             logits = forward_with_prompt(sam, images, bboxes, encoder_grad=encoder_grad)
             task_loss, parts = criterion(logits, masks)
@@ -156,15 +151,13 @@ def train_one_epoch(
             scaler.scale(task_loss).backward()
         else:
             task_loss.backward()
-        # Drop refs so train autograd graph can be reclaimed before probe forward
+        # Drop refs so train graph is reclaimed before probe forward
         del logits, task_loss
 
-        # ---------- CKA: forward + backward (only probe graph alive here) ---
-        # Apply every N steps (default 1). When N > 1, scale lambda by N so
-        # the cumulative gradient over the N-step window matches what every-step
-        # application at the configured lambda would produce. This preserves
-        # the lambda-sweep semantics — sweeping 0.1/1.0/10.0 still tests the
-        # same effective regularization strengths regardless of N.
+        # CKA: forward + backward (only probe graph alive here).
+        # Apply every N steps; scale lambda by N so the cumulative gradient over
+        # the window matches every-step application at the configured lambda
+        # (keeps the lambda sweep comparable across N).
         cka_loss_val = 0.0
         do_cka_this_step = (cka_ctx is not None) and (step_idx % cka_every_n == 0)
         if do_cka_this_step:
@@ -180,9 +173,8 @@ def train_one_epoch(
                 )
             cur_acts = cka_ctx["hook_handle"].stacked()
 
-            # CKA math in fp32 (autocast OFF). Reason: linear CKA computes
-            # ||X^T X||_F^2 which for our feature dims hits ~1e10 — well over
-            # fp16's 65504 max. Without this guard, CKA = NaN on every step.
+            # CKA math in fp32 (autocast OFF): ||X^T X||_F^2 hits ~1e10 for our
+            # feature dims, over fp16's 65504 max, so fp16 gives NaN every step.
             with torch.autocast(device_type=_AUTOCAST_DEVICE, enabled=False):
                 per_layer_losses = []
                 for name, base_act in cka_ctx["base_acts"].items():
@@ -208,14 +200,13 @@ def train_one_epoch(
                 else:
                     scaled_cka.backward()
 
-            # Free the accumulated hook tensors (they pinned the probe graph
-            # until backward; after backward they're orphaned and can go).
+            # Free accumulated hook tensors; orphaned after backward.
             cka_ctx["hook_handle"].clear()
             del cur_acts
             if scaled_cka is not None:
                 del cka_loss, scaled_cka
 
-        # ---------- Optimizer step (sees grads from BOTH backwards) ----------
+        # Optimizer step (sees grads from both backwards)
         if scaler is not None:
             scaler.step(optimizer)
             scaler.update()
@@ -229,7 +220,7 @@ def train_one_epoch(
         bces.append(parts["bce"])
         dlosses.append(parts["dice_loss"])
         if cka_ctx is not None:
-            # Only record CKA value on steps where it was actually computed
+            # record CKA only on steps where it was computed
             if do_cka_this_step:
                 cka_losses.append(cka_loss_val)
         postfix = {
@@ -237,7 +228,8 @@ def train_one_epoch(
             "dice_l": f"{parts['dice_loss']:.3f}",
         }
         if cka_ctx is not None:
-            postfix["cka_l"] = f"{cka_loss_val:.3f}" if do_cka_this_step else "—"
+            # "-" on skipped steps
+            postfix["cka_l"] = f"{cka_loss_val:.3f}" if do_cka_this_step else "-"
         pbar.set_postfix(postfix)
 
     out = {
@@ -283,7 +275,7 @@ def save_checkpoint(
     scheduler=None,
     best_val: float | None = None,
 ) -> None:
-    """Save trainable parameters + (optionally) optimizer/scheduler state for resume."""
+    """Save trainable params, optionally optimizer/scheduler state for resume."""
     trainable_state = {
         n: p.detach().cpu().clone()
         for n, p in sam.named_parameters()
@@ -312,23 +304,20 @@ def main() -> int:
     seed = args.seed if args.seed is not None else cfg.get("seed", 0)
     set_seed(seed)
 
-    # Speed wins for fixed-shape (1024x1024) training. cudnn benchmark picks the
-    # fastest convolution algorithm per input shape (one-time autotune ~10 sec at
-    # epoch 1, then ~15-25% faster forward+backward forever after). TF32 lets
-    # matmul/conv use TF32 internally on A10/A100 — same training accuracy as
-    # fp32, much faster. Both are no-ops on CPU/MPS so safe to set unconditionally.
+    # Speed wins for fixed-shape (1024x1024) training. cudnn.benchmark autotunes
+    # the conv algorithm per input shape (~10s once, then ~15-25% faster). TF32
+    # speeds up matmul/conv on A10/A100 at fp32-level accuracy. No-ops on CPU/MPS.
     if torch.cuda.is_available():
         torch.backends.cudnn.benchmark = True
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
 
-    device = get_device()  # auto: cuda > mps > cpu
+    device = get_device()  # cuda > mps > cpu
     method = cfg["method"]
     print(f"[train] device={device} ({device_name(device)}) method={method} seed={seed}")
 
-    # Autocast device_type kwarg is required even when enabled=False, so we
-    # bind it once here and reference the module-level constant from inside
-    # train_one_epoch / validate (which already exist as module-level fns).
+    # Bind the autocast device_type once; train_one_epoch/validate read the
+    # module-level constant (kwarg required even when enabled=False).
     global _AUTOCAST_DEVICE
     _AUTOCAST_DEVICE = autocast_device_type(device)
 
@@ -361,11 +350,8 @@ def main() -> int:
     )
     print(f"[train] train_n={len(train_ds)} val_n={len(val_ds)} image_size={image_size}")
 
-    # DataLoader speed wins:
-    # - persistent_workers=True : workers stay alive across epochs (saves ~5 sec
-    #   startup per epoch + first-batch lag)
-    # - prefetch_factor=4 : queue 4 batches per worker so GPU never waits on I/O
-    # Only enable when num_workers > 0 (these kwargs are illegal with workers=0).
+    # persistent_workers keeps workers alive across epochs; prefetch_factor=4
+    # queues batches so the GPU doesn't wait on I/O. Both illegal with workers=0.
     train_nw = cfg["train"].get("num_workers", 8)
     eval_nw = cfg["eval"].get("num_workers", 8)
     train_extra = (
@@ -410,9 +396,7 @@ def main() -> int:
 
     criterion = DiceBCELoss(dice_weight=float(cfg["train"].get("dice_weight", 0.5)))
 
-    # ------------------------------------------------------------------
-    # Optional: CKA-aware training setup
-    # ------------------------------------------------------------------
+    # Optional CKA-aware training setup
     cka_cfg = cfg.get("cka_regularization") or {}
     cka_ctx = None
     if cka_cfg.get("enabled"):
@@ -448,12 +432,11 @@ def main() -> int:
         base_acts = cache_base_activations(base_for_probe, probe_batch, layer_names)
         print(f"[train][cka] base activations cached: "
               f"{ {n: tuple(a.shape) for n, a in base_acts.items()} }")
-        del base_for_probe  # we only needed it for one forward
+        del base_for_probe  # only needed for one forward
         empty_cache(device)
 
-        # Register hooks on the *current* trainable model in ACCUMULATE mode —
-        # decoder hooks fire once per probe sample (per-sample loop), so we
-        # must accumulate and stack rather than overwrite.
+        # Hooks on the current trainable model in accumulate mode: decoder hooks
+        # fire once per probe sample, so accumulate and stack, don't overwrite.
         hook_handle = register_hooks(sam, layer_names, detach=False, accumulate=True)
 
         cka_ctx = {
@@ -472,7 +455,7 @@ def main() -> int:
     run_dir = REPO_ROOT / cfg["output"]["checkpoint_dir"] / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
     log_path = run_dir / "train_log.csv"
-    # Append on resume so we don't lose previous epoch records
+    # Append on resume to keep previous epoch records
     log_mode = "a" if (args.resume and log_path.exists() and log_path.stat().st_size > 0) else "w"
     log_fh = open(log_path, log_mode, newline="")
     log_w = csv.writer(log_fh)
@@ -495,15 +478,13 @@ def main() -> int:
         # Restore trainable params
         trainable_state = {k: v.to(device) for k, v in ckpt["trainable_state"].items()}
         sam.load_state_dict(trainable_state, strict=False)
-        # Restore optimizer state (Adam moments, not the LR — scheduler will set that)
+        # Restore optimizer state (Adam moments; scheduler sets the LR)
         if "optimizer" in ckpt:
             optimizer.load_state_dict(ckpt["optimizer"])
-        # IMPORTANT: do NOT load the saved scheduler state directly. If the saved
-        # checkpoint came from a run with a different `epochs` value (e.g. a 1-epoch
-        # smoke test), its T_max baked into the state would override our new T_max
-        # and break cosine annealing. Instead, freshly-constructed scheduler is
-        # advanced to the right position by stepping `completed_epochs` times,
-        # which gives the correct LR for the new T_max.
+        # Don't load saved scheduler state: its baked-in T_max would override the
+        # current `epochs` (e.g. resuming from a 1-epoch smoke test) and break
+        # cosine annealing. Instead step the fresh scheduler completed_epochs
+        # times so the LR matches the new T_max.
         completed_epochs = int(ckpt["epoch"])
         for _ in range(completed_epochs):
             scheduler.step()
@@ -524,10 +505,9 @@ def main() -> int:
             sam, train_loader, optimizer, scaler, criterion, device,
             encoder_grad=enc_grad, amp=amp, cka_ctx=cka_ctx,
         )
-        # Thermal cooldown between train and val. ViT-B encoder gradient
-        # backward at 1024x1024 saturates mobile GPUs; the val pass kicks off
-        # without checkpointing and spikes memory, which causes driver crashes
-        # on hot hardware. Letting the GPU cool for a minute fixes this.
+        # Thermal cooldown between train and val. ViT-B backward at 1024x1024
+        # saturates mobile GPUs and the val pass spikes memory (no checkpointing),
+        # which crashes the driver on hot hardware. Cooling for a minute fixes it.
         if cooldown_s > 0:
             print(f"[train] cooldown {cooldown_s:.0f}s before val")
             synchronize(device)
@@ -565,13 +545,13 @@ def main() -> int:
         log_w.writerow(row)
         log_fh.flush()
 
-        # Always save latest (with optimizer/scheduler for resume), save best when val improves
+        # Save latest every epoch (with optimizer/scheduler for resume); best on improvement
         if val_dice > best_val:
             best_val = val_dice
             save_checkpoint(
                 sam, run_dir / "best.pth", epoch, val_dice, cfg, best_val=best_val
             )
-            print(f"[train]   ✓ new best val_dice={best_val:.4f}")
+            print(f"[train]   new best val_dice={best_val:.4f}")
         save_checkpoint(
             sam, run_dir / "latest.pth", epoch, val_dice, cfg,
             optimizer=optimizer, scheduler=scheduler, best_val=best_val,

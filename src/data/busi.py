@@ -1,30 +1,11 @@
-"""BUSI dataset — Breast UltraSound Images (Cairo Univ., Al-Dhabyani et al. 2020).
+"""BUSI - Breast UltraSound Images (Cairo Univ., Al-Dhabyani et al. 2020).
 
-780 ultrasound images across 3 classes: benign (487), malignant (210), normal (133).
-For each abnormal image there is a binary segmentation mask. Normal images have no
-masks and are excluded from segmentation evaluation.
+780 images: benign (487), malignant (210), normal (133). Abnormal images have
+binary masks; normal images have none and are skipped for segmentation eval.
+Far-OOD test set for skin-trained models (greyscale ultrasound vs RGB dermoscopy).
 
-Used as a *far-OOD* test set for our skin-trained models: completely different
-imaging modality (greyscale ultrasound vs RGB dermoscopy), different anatomy,
-different acquisition physics. Tests whether trained methods preserve MedSAM's
-general medical-imaging features.
-
-Original distribution layout (from Kaggle / Cairo Univ. mirror):
-
-    Dataset_BUSI_with_GT/
-    ├── benign/
-    │   ├── benign (1).png
-    │   ├── benign (1)_mask.png
-    │   └── ...                  (some images have multiple instance masks:
-    │                             benign (X)_mask_1.png, _mask_2.png — we OR them
-    │                             together into a single binary mask)
-    ├── malignant/
-    │   ├── malignant (1).png
-    │   ├── malignant (1)_mask.png
-    │   └── ...
-    └── normal/                  (no masks — skipped)
-
-This loader handles the multi-instance-mask case automatically by OR-ing them.
+Layout: Dataset_BUSI_with_GT/{benign,malignant,normal}/<class> (N).png with
+<class> (N)_mask.png. Multiple instance masks (_mask_1, _mask_2) are OR'd together.
 """
 from __future__ import annotations
 
@@ -43,12 +24,9 @@ from .isic import PIXEL_MEAN, PIXEL_STD, _bbox_from_mask
 class BUSI(Dataset):
     """BUSI breast ultrasound dataset (segmentation subset).
 
-    Args:
-        root: path to the directory containing `benign/`, `malignant/`, `normal/`.
-        include_normal: include normal-class images (no lesion). Default False
-            because they have no masks and don't contribute to segmentation metrics.
-        image_size: square size (typically 1024 to match training resolution).
-        bbox_perturb_pixels: jitter on bbox prompts (0 for eval).
+    root contains benign/, malignant/, normal/. include_normal: keep normal-class
+    images (no mask, no segmentation contribution), default False. image_size resize
+    target. bbox_perturb_pixels = jitter (0 for eval).
     """
 
     def __init__(
@@ -64,8 +42,7 @@ class BUSI(Dataset):
         self.image_size = image_size
         self.bbox_perturb_pixels = bbox_perturb_pixels
 
-        # BUSI image-naming pattern: "<class> (N).png", mask "<class> (N)_mask[_K].png"
-        # We pair images with all matching mask files and OR them at load time.
+        # Names: "<class> (N).png", masks "<class> (N)_mask[_K].png"; pair and OR at load.
         classes = ["benign", "malignant"]
         if include_normal:
             classes.append("normal")
@@ -74,8 +51,7 @@ class BUSI(Dataset):
         for cls in classes:
             cls_dir = self.root / cls
             if not cls_dir.is_dir():
-                # Some redistributions use "Dataset_BUSI_with_GT/benign" — caller
-                # should pass the correct root. Skip missing classes silently.
+                # Skip missing classes; caller must pass the correct root.
                 continue
             # Index files by stem (without _mask suffix)
             mask_re = re.compile(r"^(.+?)_mask(?:_\d+)?$")
@@ -111,7 +87,7 @@ class BUSI(Dataset):
         img_pil = Image.open(img_path).convert("RGB")
         orig_w, orig_h = img_pil.size
 
-        # Combine multiple instance masks via logical OR
+        # OR multiple instance masks together
         if mask_paths:
             mask_arrs = []
             for mp in mask_paths:

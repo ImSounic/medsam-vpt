@@ -1,35 +1,13 @@
-"""Aggregate multi-seed eval results into mean ± std across seeds.
+"""Aggregate multi-seed eval results into mean +/- std across seeds.
 
-After running the seed=1 and seed=2 trainings + their evals, we'll have:
+Reads tight-bbox CSVs (results/runs*.csv) and bbox-robustness CSVs
+(bbox_robustness/results*/runs.csv) for seeds 0, 1, 2 across the three
+trainings, then writes:
+  summary_full_multiseed.csv                       mean/std per cell
+  bbox_robustness/comparison/seed_error_bars.png   overlay curves with bands
+  bbox_robustness/comparison/seed_summary_table.md markdown table
 
-  Tight-bbox eval CSVs (one per seed):
-    results/runs.csv             (seed 0, pm=0)
-    results/runs_pm20.csv        (seed 0, pm=20)
-    results/runs_rand100.csv     (seed 0, rand100)
-    results/runs_seed1.csv       (seed 1, pm=0)
-    results/runs_seed1_pm20.csv  (seed 1, pm=20)
-    results/runs_seed1_rand100.csv
-    results/runs_seed2.csv
-    results/runs_seed2_pm20.csv
-    results/runs_seed2_rand100.csv
-
-  Bbox robustness CSVs (one per seed × training):
-    bbox_robustness/results/runs.csv
-    bbox_robustness/results_pm20/runs.csv
-    bbox_robustness/results_rand100/runs.csv
-    bbox_robustness/results_seed1/runs.csv
-    bbox_robustness/results_seed1_pm20/runs.csv
-    bbox_robustness/results_seed1_rand100/runs.csv
-    bbox_robustness/results_seed2/runs.csv
-    bbox_robustness/results_seed2_pm20/runs.csv
-    bbox_robustness/results_seed2_rand100/runs.csv
-
-This script aggregates them into:
-  summary_full_multiseed.csv         — mean ± std per (method, training, dataset, perturb)
-  bbox_robustness/comparison/seed_error_bars.png — overlay curves with shaded bands
-  bbox_robustness/comparison/seed_summary_table.md — markdown table with ± std
-
-Run after all 30 seed-1/seed-2 trainings + their 12 eval invocations complete.
+Run after the seed-1/seed-2 trainings and evals complete.
 """
 from __future__ import annotations
 
@@ -42,14 +20,12 @@ import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# ---------------------------------------------------------------------------
-# Source CSV discovery — handles existing seed=0 paths plus seed{1,2} siblings
-# ---------------------------------------------------------------------------
+# Source CSV discovery: seed=0 paths plus seed{1,2} siblings.
 
 TRAININGS = ("pm=0", "pm=20", "rand100")
 SEEDS = (0, 1, 2)
 
-# tight-bbox CSV paths
+
 def tight_csv_for_seed(seed: int, training: str) -> Path:
     """results/runs[_pm20|_rand100].csv (seed 0) or
        results/runs_seedN[_pm20|_rand100].csv (seed > 0)."""
@@ -86,7 +62,7 @@ METHOD_LABELS = {
 }
 DATASET_LABELS = {
     "isic2018_test": "ISIC 2018 (ID)",
-    "ph2":           "PH² (near-OOD)",
+    "ph2":           "PH2 (near-OOD)",
     "busi":          "BUSI (far-OOD ultrasound)",
     "cbis_ddsm":     "CBIS-DDSM (far-OOD mammography)",
 }
@@ -101,14 +77,9 @@ METHOD_COLORS = {
 TRAINING_LINESTYLES = {"pm=0": "-", "pm=20": "--", "rand100": ":"}
 
 
-# ---------------------------------------------------------------------------
-# Load every (seed, training) pair into one long-form DataFrame
-# ---------------------------------------------------------------------------
-
 def load_all_seeds() -> pd.DataFrame:
-    """Returns DataFrame with columns: seed, method, training, dataset,
-       perturb_max_px, dice_mean. Includes both tight (pm=0 eval) and
-       bbox-robustness (pm=20..200) rows."""
+    """Long-form DataFrame: seed, method, training, dataset, perturb_max_px,
+    dice_mean. Includes tight (pm=0 eval) and bbox-robustness (pm=20..200) rows."""
     rows = []
 
     for seed in SEEDS:
@@ -127,7 +98,7 @@ def load_all_seeds() -> pd.DataFrame:
                         "dice_mean": float(r["dice_mean"]),
                     })
 
-            # Bbox-robustness rows (perturb_max_px ∈ {20, 50, 100, 200})
+            # Bbox-robustness rows (perturb_max_px in {20, 50, 100, 200})
             bbox_path = bbox_csv_for_seed(seed, training)
             if bbox_path.exists():
                 bbox_df = pd.read_csv(bbox_path)
@@ -142,18 +113,14 @@ def load_all_seeds() -> pd.DataFrame:
                     })
 
     df = pd.DataFrame(rows)
-    # zero_shot results are identical across trainings (no checkpoint difference)
-    # — drop duplicates so we keep just one copy per (seed, dataset, perturb).
+    # zero_shot is identical across trainings (no checkpoint), so dedupe to one
+    # copy per (seed, dataset, perturb).
     df = df.drop_duplicates(
         subset=["seed", "method", "training", "dataset", "perturb_max_px"],
         keep="first",
     )
     return df
 
-
-# ---------------------------------------------------------------------------
-# Aggregate: mean ± std per (method, training, dataset, perturb)
-# ---------------------------------------------------------------------------
 
 def aggregate_mean_std(df: pd.DataFrame) -> pd.DataFrame:
     """Group by (method, training, dataset, perturb), compute mean + std across seeds."""
@@ -167,14 +134,10 @@ def aggregate_mean_std(df: pd.DataFrame) -> pd.DataFrame:
           )
           .reset_index()
     )
-    # If only one seed contributed, std is NaN — keep but flag
+    # Single-seed cells have NaN std; set to 0.
     agg["dice_std_seeds"] = agg["dice_std_seeds"].fillna(0.0)
     return agg
 
-
-# ---------------------------------------------------------------------------
-# Output
-# ---------------------------------------------------------------------------
 
 def write_csv(agg: pd.DataFrame, out_path: Path) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -186,9 +149,9 @@ def write_csv(agg: pd.DataFrame, out_path: Path) -> None:
 
 
 def write_summary_markdown(agg: pd.DataFrame, out_path: Path) -> None:
-    """Per-dataset table: method × training, cell = mean ± std @ pm=0 and pm=200."""
+    """Per-dataset table: method x training, cell = mean +/- std at pm=0 and pm=200."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    lines = ["# Multi-seed summary  (mean ± std across seeds 0, 1, 2)\n"]
+    lines = ["# Multi-seed summary  (mean +/- std across seeds 0, 1, 2)\n"]
 
     for ds in DATASETS:
         lines.append(f"\n## {DATASET_LABELS.get(ds, ds)}\n")
@@ -203,10 +166,10 @@ def write_summary_markdown(agg: pd.DataFrame, out_path: Path) -> None:
                 # zero_shot only has pm=0 training entries (same checkpoint reused)
                 r_t = tight.iloc[0]
                 r_e = extreme.iloc[0] if not extreme.empty else None
-                t_cell = f"{r_t['dice_mean_seeds']:.4f} ± {r_t['dice_std_seeds']:.4f}"
-                e_cell = (f"{r_e['dice_mean_seeds']:.4f} ± {r_e['dice_std_seeds']:.4f}"
-                          if r_e is not None else "—")
-                lines.append(f"| {METHOD_LABELS[m]} | — | {t_cell} | {e_cell} | {int(r_t['n_seeds'])} |")
+                t_cell = f"{r_t['dice_mean_seeds']:.4f} +/- {r_t['dice_std_seeds']:.4f}"
+                e_cell = (f"{r_e['dice_mean_seeds']:.4f} +/- {r_e['dice_std_seeds']:.4f}"
+                          if r_e is not None else "-")
+                lines.append(f"| {METHOD_LABELS[m]} | - | {t_cell} | {e_cell} | {int(r_t['n_seeds'])} |")
             else:
                 for tr in TRAININGS:
                     tight = agg[(agg["method"] == m) & (agg["training"] == tr) &
@@ -217,9 +180,9 @@ def write_summary_markdown(agg: pd.DataFrame, out_path: Path) -> None:
                         continue
                     r_t = tight.iloc[0]
                     r_e = extreme.iloc[0] if not extreme.empty else None
-                    t_cell = f"{r_t['dice_mean_seeds']:.4f} ± {r_t['dice_std_seeds']:.4f}"
-                    e_cell = (f"{r_e['dice_mean_seeds']:.4f} ± {r_e['dice_std_seeds']:.4f}"
-                              if r_e is not None else "—")
+                    t_cell = f"{r_t['dice_mean_seeds']:.4f} +/- {r_t['dice_std_seeds']:.4f}"
+                    e_cell = (f"{r_e['dice_mean_seeds']:.4f} +/- {r_e['dice_std_seeds']:.4f}"
+                              if r_e is not None else "-")
                     lines.append(f"| {METHOD_LABELS[m]} | {tr} | {t_cell} | {e_cell} | {int(r_t['n_seeds'])} |")
 
     with open(out_path, "w") as f:
@@ -228,7 +191,7 @@ def write_summary_markdown(agg: pd.DataFrame, out_path: Path) -> None:
 
 
 def plot_curves_with_seed_bands(agg: pd.DataFrame, out_path: Path) -> None:
-    """Overlay degradation curves with shaded ±std bands across seeds."""
+    """Overlay degradation curves with shaded +/-std bands across seeds."""
     fig, axes = plt.subplots(2, 2, figsize=(15, 11), sharex=True)
     axes_flat = axes.flatten()
 
@@ -259,7 +222,7 @@ def plot_curves_with_seed_bands(agg: pd.DataFrame, out_path: Path) -> None:
                                  color=METHOD_COLORS[m], alpha=0.10)
         ax.set_title(DATASET_LABELS.get(ds, ds))
         ax.set_xlabel("Eval bbox max expansion (px)")
-        ax.set_ylabel("Dice (mean ± std across seeds)")
+        ax.set_ylabel("Dice (mean +/- std across seeds)")
         ax.grid(alpha=0.3)
         ax.set_xticks(PERTURBS)
 
@@ -276,7 +239,7 @@ def plot_curves_with_seed_bands(agg: pd.DataFrame, out_path: Path) -> None:
                 loc="lower center", ncol=5, frameon=False,
                 bbox_to_anchor=(0.5, -0.04), fontsize=10)
     fig.suptitle(
-        "Multi-seed curves with ±std bands (n_seeds varies per cell — see summary CSV)",
+        "Multi-seed curves with +/-std bands (n_seeds varies per cell, see summary CSV)",
         fontsize=13, y=1.00,
     )
     fig.tight_layout()
@@ -284,10 +247,6 @@ def plot_curves_with_seed_bands(agg: pd.DataFrame, out_path: Path) -> None:
     plt.close(fig)
     print(f"[agg-seeds] wrote {out_path}")
 
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 def main() -> int:
     print("[agg-seeds] scanning for seed CSVs...")
@@ -304,7 +263,7 @@ def main() -> int:
     write_summary_markdown(agg, REPO_ROOT / "bbox_robustness" / "comparison" / "seed_summary_table.md")
     plot_curves_with_seed_bands(agg, REPO_ROOT / "bbox_robustness" / "comparison" / "seed_error_bars.png")
 
-    # Quick console summary of n_seeds per cell — surfaces incomplete runs
+    # n_seeds per cell, surfaces incomplete runs
     n_seeds_dist = agg["n_seeds"].value_counts().sort_index()
     print(f"\n[agg-seeds] n_seeds distribution across {len(agg)} cells:")
     for n, count in n_seeds_dist.items():

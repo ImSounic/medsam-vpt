@@ -1,4 +1,4 @@
-# Zero-shot MedSAM evaluation — no training, just inference with bbox prompts.
+# Zero-shot MedSAM eval, no training, just inference with bbox prompts.
 
 name: zero_shot
 method: zero_shot
@@ -6,30 +6,30 @@ method: zero_shot
 model:
   arch: vit_b
   checkpoint: checkpoints/medsam_vit_b.pth
-  image_size: 1024   # MedSAM's native eval resolution; fits in 8GB at inference
+  image_size: 1024   # MedSAM native eval res, fits 8 GB at inference
 
 data:
-  root: data    # ISIC train/val/test_{images,masks} live directly under here
+  root: data    # ISIC train/val/test_{images,masks} live here
   test_sets:
     - name: isic2018_test
       kind: isic
       split: test
     - name: ph2
       kind: ph2
-      root: data/ph2            # near-OOD: same modality (dermoscopy), different site/cameras
+      root: data/ph2            # near-OOD: dermoscopy, different site/cameras
     - name: busi
       kind: busi
-      root: data/busi           # far-OOD: ultrasound (different acoustic modality)
+      root: data/busi           # far-OOD: ultrasound modality
     - name: cbis_ddsm
       kind: cbis_ddsm
-      root: data/cbis-ddsm      # far-OOD: mammography (X-ray) — test split only
+      root: data/cbis-ddsm      # far-OOD: mammography (X-ray), test split only
       split: test
       abnormality_type: all     # use both mass and calc cases
 
 eval:
-  batch_size: 4            # A10 has plenty of headroom
-  num_workers: 4           # Linux, parallel loader workers OK
-  bbox_perturb_pixels: 0   # 0 = exact gt-derived bbox; >0 = simulate noisy prompts
+  batch_size: 4            # A10 has headroom
+  num_workers: 4           # Linux, parallel workers OK
+  bbox_perturb_pixels: 0   # 0 = exact gt bbox; >0 = noisy prompts
   device: cuda
 
 output:

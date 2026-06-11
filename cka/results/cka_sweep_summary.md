@@ -1,4 +1,4 @@
-# CKA-aware LoRA sweep — Dice results
+# CKA-aware LoRA sweep: Dice results
 
 Single seed (seed=0), 6 epochs each. Position = which decoder layers are CKA-regularised. λ = strength of the CKA loss term.
 

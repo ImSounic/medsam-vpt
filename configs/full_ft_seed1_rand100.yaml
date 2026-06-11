@@ -13,18 +13,18 @@ model:
 
 data:
   root: data
-  bbox_perturb_pixels: 100  # upper bound of random jitter range
-  random_perturb: true      # sample actual_pm from [0, 100] per step
+  bbox_perturb_pixels: 100  # upper bound of jitter range
+  random_perturb: true      # sample jitter from [0, 100] per step
 
 train:
-  batch_size: 1            # full FT trains 93M params; batch=2 risks OOM
+  batch_size: 1            # full FT trains 93M params, batch=2 risks OOM
   num_workers: 2
   epochs: 6                # match other methods for fair comparison
-  lr: 1.0e-5               # 50x lower than PEFT — full FT needs gentler updates
-  weight_decay: 1.0e-4     # mild WD to prevent encoder drift
+  lr: 1.0e-5               # 50x lower than PEFT, full FT needs gentler updates
+  weight_decay: 1.0e-4     # mild WD to limit encoder drift
   dice_weight: 0.5
   amp: true
-  cooldown_seconds: 60     # defensive thermal pause
+  cooldown_seconds: 60     # thermal pause
 
 eval:
   batch_size: 1

@@ -1,8 +1,7 @@
 """MedSAM loading helpers.
 
-MedSAM uses the SAM ViT-B architecture; only the weights differ. We load
-through segment_anything's registry and replace state dict from the MedSAM
-checkpoint.
+MedSAM uses the SAM ViT-B architecture, only the weights differ. We build
+through segment_anything's registry and load the MedSAM checkpoint's state dict.
 """
 from __future__ import annotations
 
@@ -20,9 +19,8 @@ def load_medsam(
 ) -> Sam:
     """Load MedSAM weights into a SAM ViT-B architecture and return it.
 
-    The checkpoint is loaded with strict=True; if MedSAM ever ships a
-    slightly modified arch we'd surface that here rather than failing
-    silently.
+    Loaded non-strict; missing/unexpected key counts are printed so an arch
+    mismatch surfaces instead of failing silently.
     """
     checkpoint_path = Path(checkpoint_path)
     if not checkpoint_path.exists():
@@ -31,22 +29,20 @@ def load_medsam(
             f"Run: python scripts/download_medsam.py"
         )
 
-    # Auto-select best device if caller didn't specify (cuda > mps > cpu).
+    # Auto-select device if caller didn't specify (cuda > mps > cpu).
     if device is None:
         from src.device_utils import get_device
         device = get_device()
 
-    # Build architecture without weights
     sam: Sam = sam_model_registry[arch](checkpoint=None)
 
-    # Load MedSAM weights
     state_dict = torch.load(checkpoint_path, map_location="cpu")
-    # MedSAM checkpoints are flat state dicts; some are wrapped in {"model": ...}
+    # Most MedSAM dumps are flat; some wrap weights under "model".
     if "model" in state_dict and isinstance(state_dict["model"], dict):
         state_dict = state_dict["model"]
     missing, unexpected = sam.load_state_dict(state_dict, strict=False)
     if missing:
-        print(f"[load_medsam] missing keys: {len(missing)} (often acceptable)")
+        print(f"[load_medsam] missing keys: {len(missing)} (usually fine)")
     if unexpected:
         print(f"[load_medsam] unexpected keys: {len(unexpected)}")
 
@@ -60,22 +56,17 @@ def load_medsam_from_state_dict(
     arch: str = "vit_b",
     device: str | torch.device | None = None,
 ) -> Sam:
-    """Build a SAM ViT-B with an already-loaded state dict (no disk I/O).
+    """Build a SAM ViT-B from an already-loaded state dict (no disk I/O).
 
-    Use this when you want to instantiate multiple SAMs from the same base
-    weights without re-reading the 358 MB .pth file each time. Typical
-    pattern:
-
-        base_sd = torch.load("checkpoints/medsam_vit_b.pth", map_location="cpu")
-        sam_a = load_medsam_from_state_dict(base_sd, device="cuda")
-        sam_b = load_medsam_from_state_dict(base_sd, device="cuda")
+    Use this to spin up multiple SAMs from the same base weights without
+    re-reading the 358 MB .pth each time.
     """
     if device is None:
         from src.device_utils import get_device
         device = get_device()
 
     sam: Sam = sam_model_registry[arch](checkpoint=None)
-    # Some MedSAM dumps wrap the actual weights under a top-level "model" key
+    # Some MedSAM dumps wrap weights under a top-level "model" key.
     sd = state_dict["model"] if isinstance(state_dict.get("model"), dict) else state_dict
     sam.load_state_dict(sd, strict=False)
     sam = sam.to(device)

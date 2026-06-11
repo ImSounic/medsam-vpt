@@ -5,7 +5,7 @@
 
 | Method | Training | Dice @ pm=0 (tight) | Dice @ pm=200 (extreme) | n_seeds |
 |---|---|---:|---:|---:|
-| Zero-shot | — | 0.9072 ± 0.0000 | 0.7673 ± 0.0000 | 3 |
+| Zero-shot | n/a | 0.9072 ± 0.0000 | 0.7673 ± 0.0000 | 3 |
 | Decoder-only | pm=0 | 0.9487 ± 0.0002 | 0.7102 ± 0.0042 | 3 |
 | Decoder-only | pm=20 | 0.9462 ± 0.0004 | 0.7271 ± 0.0135 | 3 |
 | Decoder-only | rand100 | 0.9377 ± 0.0008 | 0.7896 ± 0.0099 | 3 |
@@ -26,7 +26,7 @@
 
 | Method | Training | Dice @ pm=0 (tight) | Dice @ pm=200 (extreme) | n_seeds |
 |---|---|---:|---:|---:|
-| Zero-shot | — | 0.9054 ± 0.0000 | 0.7986 ± 0.0000 | 3 |
+| Zero-shot | n/a | 0.9054 ± 0.0000 | 0.7986 ± 0.0000 | 3 |
 | Decoder-only | pm=0 | 0.9467 ± 0.0001 | 0.7309 ± 0.0037 | 3 |
 | Decoder-only | pm=20 | 0.9449 ± 0.0030 | 0.7513 ± 0.0227 | 3 |
 | Decoder-only | rand100 | 0.9390 ± 0.0028 | 0.7944 ± 0.0045 | 3 |
@@ -47,7 +47,7 @@
 
 | Method | Training | Dice @ pm=0 (tight) | Dice @ pm=200 (extreme) | n_seeds |
 |---|---|---:|---:|---:|
-| Zero-shot | — | 0.8234 ± 0.0000 | 0.6017 ± 0.0000 | 3 |
+| Zero-shot | n/a | 0.8234 ± 0.0000 | 0.6017 ± 0.0000 | 3 |
 | Decoder-only | pm=0 | 0.8935 ± 0.0008 | 0.4915 ± 0.0035 | 3 |
 | Decoder-only | pm=20 | 0.8807 ± 0.0018 | 0.5184 ± 0.0179 | 3 |
 | Decoder-only | rand100 | 0.8226 ± 0.0087 | 0.5142 ± 0.0158 | 3 |
@@ -68,7 +68,7 @@
 
 | Method | Training | Dice @ pm=0 (tight) | Dice @ pm=200 (extreme) | n_seeds |
 |---|---|---:|---:|---:|
-| Zero-shot | — | 0.6924 ± 0.0000 | 0.1889 ± 0.0000 | 3 |
+| Zero-shot | n/a | 0.6924 ± 0.0000 | 0.1889 ± 0.0000 | 3 |
 | Decoder-only | pm=0 | 0.8280 ± 0.0006 | 0.1574 ± 0.0012 | 3 |
 | Decoder-only | pm=20 | 0.7824 ± 0.0044 | 0.1532 ± 0.0040 | 3 |
 | Decoder-only | rand100 | 0.6090 ± 0.0504 | 0.1362 ± 0.0148 | 3 |

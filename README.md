@@ -1,15 +1,15 @@
 # MedSAM-VPT: Prompt Tuning vs Fine-Tuning for Medical Segmentation
 
-**University project — Advanced Computer Vision and Pattern Recognition**
+University project, Advanced Computer Vision and Pattern Recognition.
 
-We compare six adaptation strategies for the **MedSAM** foundation model on
-skin lesion segmentation, evaluating both in-distribution performance and
-robustness under increasing distribution shift. The headline finding:
-**parameter-efficient methods that aggressively modify the encoder (LoRA,
-VPT) win in-distribution but collapse under extreme modality shift —
-falling below zero-shot performance on mammography (CBIS-DDSM).** Methods
+We compare six adaptation strategies for the MedSAM foundation model on
+skin lesion segmentation, measuring both in-distribution performance and
+robustness under increasing distribution shift. Headline finding:
+parameter-efficient methods that aggressively modify the encoder (LoRA,
+VPT) win in-distribution but collapse under extreme modality shift,
+falling below zero-shot performance on mammography (CBIS-DDSM). Methods
 that leave the encoder mostly intact (Decoder-only FT, Full FT with gentle
-LR) sacrifice a fraction of a Dice point on ID to retain robustness across
+LR) give up a fraction of a Dice point on ID to keep robustness across
 the drift ladder.
 
 ---
@@ -18,7 +18,7 @@ the drift ladder.
 
 ![Rank reversal across the drift ladder](results/figures/7_rank_reversal.png)
 
-All numbers below are **mean ± std across 3 random seeds (0, 1, 2)** at tight
+All numbers below are mean ± std across 3 random seeds (0, 1, 2) at tight
 bbox (pm=0). Full per-seed numbers live in `summary_full_multiseed.csv`.
 
 | Method | Trainable | ISIC (ID) Dice | PH² (near-OOD) Dice | BUSI (far-OOD: ultrasound) | CBIS-DDSM (far-OOD: mammography) |
@@ -30,21 +30,20 @@ bbox (pm=0). Full per-seed numbers live in `summary_full_multiseed.csv`.
 | LoRA (r=8) | 4.35 M | 0.9556 ± 0.0010 | 0.9570 ± 0.0013 | 0.7801 ± 0.0024 | **0.5094 ± 0.0101** |
 | **Full FT** | 93.73 M | **0.9610 ± 0.0003** | **0.9583 ± 0.0001** | **0.9007 ± 0.0015** | **0.8285 ± 0.0010** |
 
-**On ISIC (ID):** Full FT > LoRA > VPT-deep ≈ Decoder-only ≈ VPT-shallow > Zero-shot.
-**On BUSI (ultrasound):** Full FT ≈ Decoder-only > Zero-shot > VPT-deep ≈ VPT-shallow > LoRA.
-**On CBIS-DDSM (mammography):** Full FT ≈ Decoder-only > **Zero-shot** > VPT-deep ≈ VPT-shallow > LoRA.
+On ISIC (ID): Full FT > LoRA > VPT-deep ≈ Decoder-only ≈ VPT-shallow > Zero-shot.
+On BUSI (ultrasound): Full FT ≈ Decoder-only > Zero-shot > VPT-deep ≈ VPT-shallow > LoRA.
+On CBIS-DDSM (mammography): Full FT ≈ Decoder-only > Zero-shot > VPT-deep ≈ VPT-shallow > LoRA.
 
-The rank reversal is most dramatic on CBIS-DDSM mammography — the most
-extreme modality shift in our drift ladder (visible-light dermoscopy →
+The rank reversal is sharpest on CBIS-DDSM mammography, the most
+extreme modality shift in the drift ladder (visible-light dermoscopy to
 X-ray). All three encoder-modifying methods (LoRA, VPT-deep, VPT-shallow)
-fall **below zero-shot** performance there, with LoRA collapsing from
-second-best on ID (0.9556 ± 0.0010) to worst overall (0.5094 ± 0.0101 —
-about 0.18 below zero-shot). On the milder ultrasound shift (BUSI), the
-same ordering holds but no method falls below zero-shot. The explanation
-boils down to *where* and *how aggressively* each method adapts the
-encoder.
+fall below zero-shot there. LoRA collapses from second-best on ID
+(0.9556 ± 0.0010) to worst overall (0.5094 ± 0.0101, about 0.18 below
+zero-shot). On the milder ultrasound shift (BUSI) the same ordering holds
+but no method falls below zero-shot. The cause is where and how
+aggressively each method adapts the encoder.
 
-Seed variance is small relative to method differences — every std in the
+Seed variance is small relative to method differences: every std in the
 table above is ≤ 0.02 Dice, well under the ≥ 0.04 gaps between any two
 methods on every dataset. The ranking is stable across all 3 seeds.
 
@@ -55,13 +54,13 @@ the headline claims.
 
 ---
 
-## Bbox prompt robustness — a second, harder finding
+## Bbox prompt robustness: a second, harder finding
 
 The standard eval above uses pixel-perfect bounding boxes derived from the
-ground-truth mask. That's unrealistic — a clinician draws an approximate,
+ground-truth mask. That's unrealistic: a clinician draws an approximate,
 generous bbox, not a tight one. To test how each method holds up under
 realistic prompt imprecision, we re-evaluate every model with bboxes whose
-sides are independently expanded outward by 0–N px (random per image).
+sides are independently expanded outward by 0 to N px (random per image).
 N ∈ {20, 50, 100, 200} px. Full details in `bbox_robustness/`.
 
 The headline picture is in
@@ -70,25 +69,25 @@ The headline picture is in
 on one figure). A few of the numbers they summarise (pm=0 trained,
 mean ± std over 3 seeds):
 
-| | ISIC pm=0 → pm=200 | BUSI pm=0 → pm=200 | CBIS-DDSM pm=0 → pm=200 |
+| | ISIC pm=0 to pm=200 | BUSI pm=0 to pm=200 | CBIS-DDSM pm=0 to pm=200 |
 |---|:--:|:--:|:--:|
-| Zero-shot      | 0.907 → 0.767 (−0.140)            | 0.823 → **0.602**                 | 0.692 → 0.189                     |
-| Full FT        | 0.961 → 0.712 ± 0.003 (−0.249)    | 0.901 → 0.500 ± 0.004             | 0.829 → 0.171 ± 0.001             |
-| Decoder-only   | 0.949 → 0.710 ± 0.004             | 0.894 → 0.492 ± 0.004             | 0.828 → 0.157 ± 0.001             |
-| LoRA           | 0.956 → **0.787 ± 0.012**         | 0.780 → 0.490 ± 0.006             | 0.509 → **0.147 ± 0.004**         |
-| VPT-deep       | 0.947 → 0.725 ± 0.001             | 0.802 → 0.482 ± 0.013             | 0.572 → 0.137 ± 0.004             |
-| VPT-shallow    | 0.945 → 0.735 ± 0.010             | 0.792 → 0.487 ± 0.002             | 0.566 → 0.137 ± 0.008             |
+| Zero-shot      | 0.907 to 0.767 (-0.140)            | 0.823 to **0.602**                 | 0.692 to 0.189                     |
+| Full FT        | 0.961 to 0.712 ± 0.003 (-0.249)    | 0.901 to 0.500 ± 0.004             | 0.829 to 0.171 ± 0.001             |
+| Decoder-only   | 0.949 to 0.710 ± 0.004             | 0.894 to 0.492 ± 0.004             | 0.828 to 0.157 ± 0.001             |
+| LoRA           | 0.956 to **0.787 ± 0.012**         | 0.780 to 0.490 ± 0.006             | 0.509 to **0.147 ± 0.004**         |
+| VPT-deep       | 0.947 to 0.725 ± 0.001             | 0.802 to 0.482 ± 0.013             | 0.572 to 0.137 ± 0.004             |
+| VPT-shallow    | 0.945 to 0.735 ± 0.010             | 0.792 to 0.487 ± 0.002             | 0.566 to 0.137 ± 0.008             |
 
 Two patterns matter for the report:
 
-- **Zero-shot is the most robust method at extreme bbox imprecision on
-  ultrasound (BUSI).** All five trained methods fall harder than the
+- Zero-shot is the most robust method at extreme bbox imprecision on
+  ultrasound (BUSI). All five trained methods fall harder than the
   untrained baseline. MedSAM's pretraining used a wider prompt distribution
-  than our tight-bbox finetuning, so finetuning *removes* prompt-robustness
+  than our tight-bbox finetuning, so finetuning removes prompt-robustness
   capacity it already had.
-- **On CBIS-DDSM mammography, every method collapses below 0.20 Dice at
-  pm=200.** Far-OOD modality + heavily-perturbed prompts is essentially
-  unsolvable with bbox prompting alone — that's the regime ceiling.
+- On CBIS-DDSM mammography, every method collapses below 0.20 Dice at
+  pm=200. Far-OOD modality plus heavily-perturbed prompts is essentially
+  unsolvable with bbox prompting alone. That's the regime ceiling.
 
 ### Robustness fix attempt: train with bbox jitter
 
@@ -102,21 +101,20 @@ of the original `pm=0` (tight-bbox) training:
 | `pm=20` (fixed jitter) | every step jitters each bbox corner uniformly in ±20 px | `configs/*_pm20.yaml` | `checkpoints/runs_pm20/` |
 | `rand100` (random jitter) | every step samples `actual ~ U[0, 100]`, then jitters corners in ±actual | `configs/*_rand100.yaml` | `checkpoints/runs_rand100/` |
 
-`rand100` mirrors how SAM/MedSAM were actually pretrained — a model
-exposed to the full prompt-quality spectrum should ideally become
-prompt-invariant. The eval results above repeat for both new trainings,
+`rand100` mirrors how SAM/MedSAM were actually pretrained: a model
+exposed to the full prompt-quality spectrum should become
+prompt-invariant. The eval above repeats for both new trainings,
 giving a 6 methods × 4 datasets × 5 perturb levels × 3 trainings =
 360-cell experiment matrix.
 
-The finding is a **clean trade-off curve**, not a uniform improvement:
+The finding is a clean trade-off curve, not a uniform improvement:
 
-> **Training on a wider bbox-jitter distribution trades far-OOD modality
-> transfer for in-modality prompt robustness.** The wider the training
-> jitter, the better the model becomes at handling sloppy prompts on
-> dermoscopy, but the worse it becomes at handling far-OOD modalities
-> at *any* prompt quality. Zero-shot MedSAM achieves both kinds of
-> robustness simultaneously only because its pretraining used a much more
-> diverse modality + prompt distribution than ISIC alone.
+> Training on a wider bbox-jitter distribution trades far-OOD modality
+> transfer for in-modality prompt robustness. The wider the training
+> jitter, the better the model handles sloppy prompts on dermoscopy, but
+> the worse it handles far-OOD modalities at any prompt quality. Zero-shot
+> MedSAM gets both kinds of robustness at once only because its pretraining
+> used a far more diverse modality and prompt distribution than ISIC alone.
 
 #### The headline numbers
 
@@ -132,13 +130,13 @@ a dramatic win across the board.
 | VPT-shallow | 0.7352 ± 0.0104 | 0.7478 ± 0.0034 | 0.7896 ± 0.0138 (+0.054) |
 | *(Zero-shot reference)* | 0.7673 | 0.7673 | 0.7673 |
 
-With rand100 training, **all five trained methods beat zero-shot on ISIC
-at pm=200**, which none of them could do under pm=0 or pm=20 training.
-The rand100 − pm=0 advantage is at least 5× the per-seed std for every
-method, so the effect is well outside random-init noise — see the paired
+With rand100 training, all five trained methods beat zero-shot on ISIC
+at pm=200, which none of them could do under pm=0 or pm=20 training.
+The rand100 minus pm=0 advantage is at least 5× the per-seed std for every
+method, so the effect is well outside random-init noise. See the paired
 test in `seed_significance.md` (claim C1a, p < 0.001).
 
-**CBIS-DDSM tight bbox (far-OOD modality transfer):** rand100 is a
+CBIS-DDSM tight bbox (far-OOD modality transfer): rand100 is a
 catastrophe.
 
 | Method | pm=0 train | pm=20 train | rand100 train |
@@ -149,11 +147,11 @@ catastrophe.
 | VPT-shallow | 0.5662 ± 0.0629 | 0.4555 ± 0.0415 | 0.2759 ± 0.0383 (−0.290) |
 | LoRA | 0.5094 ± 0.0101 | 0.4370 ± 0.0949 | 0.2143 ± 0.0343 (−0.295) |
 
-LoRA goes from 0.509 → 0.214 — a 58% relative drop just from changing
+LoRA goes from 0.509 to 0.214, a 58% relative drop just from changing
 the training-time jitter distribution. The 5 trained models now all
-score *below* zero-shot's CBIS-DDSM number (0.692) at tight bbox, where
+score below zero-shot's CBIS-DDSM number (0.692) at tight bbox, where
 under pm=0 training half of them were comfortably above it. All five
-−Δ values exceed 2× their pooled std, so the regression is statistically
+-Δ values exceed 2× their pooled std, so the regression is statistically
 clean (not seed-init variability).
 
 #### Statistical reliability
@@ -164,35 +162,35 @@ the markdown-formatted version is at
 `bbox_robustness/comparison/seed_summary_table.md`. Key facts:
 
 - 360 unique (method, training, dataset, perturb) cells, all with 3 seeds present.
-- The per-cell std on dice is mostly in the 0.001–0.010 range, with a long
+- The per-cell std on dice is mostly in the 0.001 to 0.010 range, with a long
   tail to ~0.025 for the noisiest cells (Full FT rand100 on ISIC pm=200,
   VPT-shallow rand100 on CBIS-DDSM tight).
 - All gaps between methods (and between trainings, within a method) that
   the report relies on are at least 4× their pooled std.
 
-We test the three headline claims with **paired tests** in two complementary
+We test the three headline claims with paired tests in two complementary
 ways (`scripts/seed_significance.py`):
 
-1. **Across-seed paired t-test** (n = 3 seeds × number of methods in the claim).
-   Tiny n but extremely conservative.
-2. **Per-image paired Wilcoxon signed-rank** on dice averaged across 3 seeds.
-   Large n (200–5000 images depending on claim), high statistical power.
+1. Across-seed paired t-test (n = 3 seeds × number of methods in the claim).
+   Tiny n but very conservative.
+2. Per-image paired Wilcoxon signed-rank on dice averaged across 3 seeds.
+   Large n (200 to 5000 images depending on claim), high statistical power.
 
 The three claims and their results (full table in
 `bbox_robustness/comparison/seed_significance.md`):
 
 | Claim | Across-seed | Per-image |
 |---|:--:|:--:|
-| **C1a** — rand100 train > pm=0 train on ISIC at pm=200 (5 PEFT methods) | ✓ p ≪ 0.001 | ✓ p ≪ 0.001 |
-| **C1b** — rand100 train > pm=0 train on PH² at pm=200 (5 PEFT methods) | ✓ p ≪ 0.001 | ✓ p ≪ 0.001 |
-| **C2** — Full FT > LoRA on CBIS-DDSM at tight bbox | ✓ p < 0.001 | — *(tight-bbox per-image only saved for seed 0)* |
-| **C3** — rand100-trained NOT > zero-shot on CBIS-DDSM at pm=200 | ✓ (test fails to reject the "rand100 > zero-shot" alternative — consistent with claim) | ✓ |
+| **C1a**: rand100 train > pm=0 train on ISIC at pm=200 (5 PEFT methods) | pass, p ≪ 0.001 | pass, p ≪ 0.001 |
+| **C1b**: rand100 train > pm=0 train on PH² at pm=200 (5 PEFT methods) | pass, p ≪ 0.001 | pass, p ≪ 0.001 |
+| **C2**: Full FT > LoRA on CBIS-DDSM at tight bbox | pass, p < 0.001 | n/a (tight-bbox per-image only saved for seed 0) |
+| **C3**: rand100-trained NOT > zero-shot on CBIS-DDSM at pm=200 | pass (test fails to reject the "rand100 > zero-shot" alternative, consistent with claim) | pass |
 
 The headline story is statistically defensible.
 
 #### Mechanism: two separable effects
 
-The mechanism analysis below uses seed-0 only — we did not re-run the
+The mechanism analysis below uses seed-0 only. We did not re-run the
 feature-shift probe on seeds 1 and 2, because the across-seed Dice trends
 above already confirm the effects are stable. The per-method shift and
 weight-delta numbers are therefore single-seed estimates; treat the
@@ -201,23 +199,23 @@ patterns as illustrative rather than as precise effect sizes.
 We probe each (method, training) combination with `scripts/encoder_mechanism_analysis.py`,
 which measures two things on a fixed probe set of 32 images per dataset:
 
-- **Weight delta**: relative L2 distance of fine-tuned encoder weights to
+- Weight delta: relative L2 distance of fine-tuned encoder weights to
   base MedSAM weights, averaged over encoder layers.
-- **Feature shift**: relative L2 distance between fine-tuned and base
-  encoder *outputs* on the probe images. Captures the *effective* encoder
+- Feature shift: relative L2 distance between fine-tuned and base
+  encoder outputs on the probe images. Captures the effective encoder
   change, including LoRA adapter and VPT prompt effects that the weight
   delta misses by construction.
 
-The data (`results/mechanism/metrics.csv`) reveals that the trade-off is
-produced by **two distinct mechanisms** that combine to produce the
+The data (`results/mechanism/metrics.csv`) shows the trade-off is
+produced by two distinct mechanisms that combine to give the
 observed Dice regressions.
 
-##### Mechanism A — Encoder drift on far-OOD modalities
+##### Mechanism A: encoder drift on far-OOD modalities
 
 Methods that modify the encoder (LoRA via adapters, full_ft via direct
-weight tuning) push encoder *outputs* in directions optimised for the
-training modality. On far-OOD modalities, these learned transformations
-don't align with anything useful — the encoder produces large outputs
+weight tuning) push encoder outputs in directions optimised for the
+training modality. On far-OOD modalities these learned transformations
+don't align with anything useful, and the encoder produces large outputs
 that bear less and less resemblance to base MedSAM features.
 
 Hard evidence:
@@ -232,30 +230,30 @@ Hard evidence:
 | Full FT × rand100 | **1.036** | 0.706 (−0.122) |
 
 For LoRA on CBIS-DDSM, when pm=20 training pulled the encoder's CBIS
-features *closer* to base (shift 0.946 → 0.713), Dice **improved**
-(+0.044). When rand100 pushed shift *back up* (to 0.881), Dice
-**collapsed** (−0.319). The mechanism runs visibly in both directions.
+features closer to base (shift 0.946 to 0.713), Dice improved
+(+0.044). When rand100 pushed shift back up (to 0.881), Dice
+collapsed (-0.319). The mechanism runs visibly in both directions.
 
-For Full FT on CBIS-DDSM, the relationship is monotonic: shift
-0.600 → 0.645 → 1.036 and Dice 0.828 → 0.802 → 0.706. At rand100,
-feature shift is greater than 1.0 — i.e., the fine-tuned encoder output
-is more different from base than zero is, meaning fully reorganized
-features that don't align with the mammography manifold the base
-encoder understood.
+For Full FT on CBIS-DDSM the relationship is monotonic: shift
+0.600 to 0.645 to 1.036 and Dice 0.828 to 0.802 to 0.706. At rand100
+feature shift exceeds 1.0, i.e. the fine-tuned encoder output is more
+different from base than zero is, meaning fully reorganized features
+that don't align with the mammography manifold the base encoder
+understood.
 
-Critically, weight delta on the same checkpoints is *tiny* (Full FT
-peaks at 0.009 relative L2). Most of the encoder drift happens through
-nonlinear amplification — small weight changes cause large output changes
-specifically on inputs far from the training distribution. **The drift
-is invisible in weight space and only visible in feature space.**
+Weight delta on the same checkpoints is tiny (Full FT peaks at 0.009
+relative L2). Most of the encoder drift happens through nonlinear
+amplification: small weight changes cause large output changes
+specifically on inputs far from the training distribution. The drift
+is invisible in weight space and only visible in feature space.
 
-##### Mechanism B — Decoder prompt-distribution sensitivity
+##### Mechanism B: decoder prompt-distribution sensitivity
 
 Even when the encoder is completely untouched (decoder_only freezes
 the encoder and adds no encoder-side parameters), the mask decoder
 learns to expect a specific prompt distribution and a specific input
 distribution. Training the decoder on wider jitter teaches it
-heuristics ("loose bbox → look in a wider neighbourhood") that work
+heuristics ("loose bbox, look in a wider neighbourhood") that work
 on dermoscopy but fail on mammography.
 
 Hard evidence:
@@ -268,52 +266,52 @@ Hard evidence:
 
 The encoder is bit-identical to base MedSAM across all three
 trainings (feature shift = 0.0 exactly), yet Dice on CBIS-DDSM drops
-by 0.174 going pm=0 → rand100. **This regression is entirely
-decoder-driven** — the encoder did nothing, but the trained mask
+by 0.174 going pm=0 to rand100. This regression is entirely
+decoder-driven: the encoder did nothing, but the trained mask
 decoder still produces worse predictions on mammography when it was
 trained on a wider prompt distribution.
 
 ##### Combined effect by method
 
-- **LoRA, Full FT** suffer from both mechanisms. They show the largest
+- LoRA, Full FT suffer from both mechanisms. They show the largest
   CBIS-DDSM regressions at rand100.
-- **Decoder-only** suffers only from mechanism B. Its regressions are
+- Decoder-only suffers only from mechanism B. Its regressions are
   smaller in absolute terms but still present.
-- **VPT methods** are an interesting hybrid: their encoder feature
-  shift on far-OOD is *tiny* (VPT-shallow at 0.002 on CBIS-DDSM), yet
-  they show large CBIS regressions (VPT-shallow goes 0.639 → 0.250 at
-  rand100). The mechanism here is likely "concentrated PEFT capacity"
-  — 10 prompts at the encoder input occupy scarce adaptable capacity
-  with dermoscopy-specific transformations that simply don't trigger
-  on mammography, so the decoder gets near-base CBIS features but
-  loses whatever benefit the prompts were supposed to provide.
+- VPT methods are a hybrid: their encoder feature shift on far-OOD is
+  tiny (VPT-shallow at 0.002 on CBIS-DDSM), yet they show large CBIS
+  regressions (VPT-shallow goes 0.639 to 0.250 at rand100). The
+  mechanism here is likely concentrated PEFT capacity: 10 prompts at
+  the encoder input occupy scarce adaptable capacity with
+  dermoscopy-specific transformations that simply don't trigger on
+  mammography, so the decoder gets near-base CBIS features but loses
+  whatever benefit the prompts were supposed to provide.
 
 #### Where to look
 
-- `bbox_robustness/comparison/seed_error_bars.png` — multi-seed
+- `bbox_robustness/comparison/seed_error_bars.png`: multi-seed
   degradation curves with ±std bands across all 4 datasets. The
   cleanest single picture of the experiment.
-- `bbox_robustness/comparison/comparison_curves_3way.png` — same
+- `bbox_robustness/comparison/comparison_curves_3way.png`: same
   picture broken down by method, with explicit pm=0/pm=20/rand100
   linestyles and shaded seed bands.
-- `bbox_robustness/comparison/multi_heatmap_3way.png` — the full Dice
+- `bbox_robustness/comparison/multi_heatmap_3way.png`: the full Dice
   surface across all 360 cells (means; ±std as small italic).
-- `bbox_robustness/comparison/delta_summary_bars.png` — average ΔDice
+- `bbox_robustness/comparison/delta_summary_bars.png`: average ΔDice
   from pm=0 baseline per (method, dataset) for both pm=20 and rand100
-  training, with pooled-σ error bars. The "verdict" view.
-- `bbox_robustness/comparison/delta_heatmap_3way.png` — per-perturb
+  training, with pooled-σ error bars. The verdict view.
+- `bbox_robustness/comparison/delta_heatmap_3way.png`: per-perturb
   ΔDice; bolded cells exceed 2× pooled σ (significance at-a-glance).
-- `bbox_robustness/comparison/seed_significance.md` — paired tests
+- `bbox_robustness/comparison/seed_significance.md`: paired tests
   on the three headline claims.
-- `results/mechanism/feature_shift_heatmap.png` — full 15-row × 4-column
+- `results/mechanism/feature_shift_heatmap.png`: full 15-row × 4-column
   view of encoder drift per (method × training × dataset). The visual
   smoking gun: LoRA's massive shift on CBIS-DDSM at pm=0, Full FT
   rand100 hitting 1.04, decoder-only's three rows of pure zero.
-  *(Seed 0 only.)*
-- `results/mechanism/shift_vs_dice_trajectories.png` — per-method
+  (Seed 0 only.)
+- `results/mechanism/shift_vs_dice_trajectories.png`: per-method
   panels showing (shift, ΔDice) trajectories across the three trainings.
-  *(Seed 0 only.)*
-- `summary_full_multiseed.csv` at repo root — every dice mean ± std
+  (Seed 0 only.)
+- `summary_full_multiseed.csv` at repo root: every dice mean ± std
   across every (method, training, dataset, perturb level), one CSV.
 
 ---
@@ -324,11 +322,11 @@ All six methods share MedSAM ViT-B as the foundation model, the same
 training data (ISIC 2018 Task 1, 2,594 dermoscopy images), the same loss
 (½·BCE + ½·Dice), the same optimiser (AdamW with cosine LR), and the same
 ground-truth-derived bounding-box prompts during forward passes. They
-differ only in *which parameters are trainable*.
+differ only in which parameters are trainable.
 
 | Method | Trainable parameters | What's modified | Source |
 |---|---|---|---|
-| `zero_shot` | 0 | Nothing — pure inference | `configs/zero_shot.yaml` |
+| `zero_shot` | 0 | Nothing (pure inference) | `configs/zero_shot.yaml` |
 | `decoder_only` | 4,058,340 (4.33%) | Mask decoder only | `src/models/decoder_only.py` |
 | `vpt_shallow` | 4,066,020 (4.34%) | 10 prompt tokens at encoder input + decoder | `src/models/vpt.py` |
 | `vpt_deep` | 4,150,500 (4.43%) | 10 prompts at every transformer block + decoder | `src/models/vpt.py` |
@@ -337,15 +335,15 @@ differ only in *which parameters are trainable*.
 
 Implementation notes:
 
-- **VPT** uses an additive-perturbation adaptation of Jia et al. (ECCV 2022)
+- VPT uses an additive-perturbation adaptation of Jia et al. (ECCV 2022)
   suitable for SAM's 2D-arranged ViT-B with window attention and relative
   positional embeddings. Token-prepending would require modifying SAM's
   attention pathway; additive perturbation matches the parameter count and
   per-layer modulation structure without architectural surgery.
-- **LoRA** is implemented from scratch (no `peft` dependency) so the cluster
+- LoRA is implemented from scratch (no `peft` dependency) so the cluster
   environment doesn't have to drag in `transformers`/`tensorflow`. See
   `src/models/lora.py`.
-- **Full FT** uses LR=1e-5 (50× lower than the PEFT methods) to keep
+- Full FT uses LR=1e-5 (50× lower than the PEFT methods) to keep
   encoder drift gentle.
 
 ---
@@ -360,7 +358,7 @@ Implementation notes:
 | CBIS-DDSM | Far-OOD test | 362 (test split, mass + calcification) | Mammography (X-ray) | Modality (most extreme) |
 
 ISIC is downloaded from the ISIC Challenge archive. PH² is downloaded from
-Kaggle (`athina123/ph2dataset`) — the original ADDI FTP is unreliable.
+Kaggle (`athina123/ph2dataset`); the original ADDI FTP is unreliable.
 BUSI is from the Kaggle mirror (`sabahesaraki/breast-ultrasound-images-dataset`)
 of the Cairo University release (Al-Dhabyani et al. 2020). CBIS-DDSM is
 from Kaggle (`awsaf49/cbis-ddsm-breast-cancer-image-dataset`), the Curated
@@ -427,7 +425,7 @@ python -m src.train --config configs/lora.yaml --resume
 # Zero-shot (no checkpoint required)
 python -m src.eval --config configs/zero_shot.yaml
 
-# Trained checkpoints — appends a row to results/runs.csv per dataset
+# Trained checkpoints: appends a row to results/runs.csv per dataset
 python -m src.eval --config configs/zero_shot.yaml \
     --checkpoint checkpoints/runs/lora_seed0/best.pth
 ```
@@ -467,10 +465,10 @@ python scripts/seed_significance.py
 
 Outputs:
 
-- `summary_full_multiseed.csv` — every dice cell with mean + std + n_seeds.
-- `bbox_robustness/comparison/seed_summary_table.md` — markdown view.
-- `bbox_robustness/comparison/seed_error_bars.png` — overlay curves with std bands.
-- `bbox_robustness/comparison/seed_significance.md` — paired tests.
+- `summary_full_multiseed.csv`: every dice cell with mean + std + n_seeds.
+- `bbox_robustness/comparison/seed_summary_table.md`: markdown view.
+- `bbox_robustness/comparison/seed_error_bars.png`: overlay curves with std bands.
+- `bbox_robustness/comparison/seed_significance.md`: paired tests.
 - All other plots in `bbox_robustness/comparison/`.
 
 ---
@@ -534,10 +532,10 @@ All eight figures are committed under `results/figures/`:
 
 Training was performed across three environments:
 
-- **Local laptop** (RTX 1000 Blackwell, 8 GB VRAM) — Decoder-only FT.
+- Local laptop (RTX 1000 Blackwell, 8 GB VRAM): Decoder-only FT.
   All evaluation runs (~8 min each).
-- **Google Colab T4** (16 GB VRAM) — VPT-shallow training.
-- **University JupyterLab A16** (16 GB virtual GPU) — VPT-deep, LoRA, Full FT.
+- Google Colab T4 (16 GB VRAM): VPT-shallow training.
+- University JupyterLab A16 (16 GB virtual GPU): VPT-deep, LoRA, Full FT.
 
 The training loop supports gradient checkpointing (VPT) and gentle
 learning rates (Full FT) to fit ViT-B encoder gradients into 16 GB. See
@@ -558,10 +556,10 @@ MedSAM weights from Ma et al. (2024), distributed via Zenodo.
 
 ## Acknowledgements
 
-- **MedSAM** — Ma et al., 2024. https://github.com/bowang-lab/MedSAM
-- **SAM** — Kirillov et al., Meta AI, 2023.
-- **VPT** — Jia et al., ECCV 2022.
-- **LoRA** — Hu et al., 2021.
-- **ISIC** — Codella et al., 2018.
-- **PH²** — Mendonça et al., 2013.
-- **BUSI** — Al-Dhabyani et al., 2020.
+- MedSAM: Ma et al., 2024. https://github.com/bowang-lab/MedSAM
+- SAM: Kirillov et al., Meta AI, 2023.
+- VPT: Jia et al., ECCV 2022.
+- LoRA: Hu et al., 2021.
+- ISIC: Codella et al., 2018.
+- PH²: Mendonça et al., 2013.
+- BUSI: Al-Dhabyani et al., 2020.

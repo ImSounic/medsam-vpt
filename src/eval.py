@@ -1,20 +1,19 @@
-"""Evaluation entry point — handles zero-shot and any trained checkpoint.
+"""Evaluation entry point. Handles zero-shot and any trained checkpoint.
 
 Usage:
     # Zero-shot
     python -m src.eval --config configs/zero_shot.yaml
 
-    # Trained checkpoint (method is auto-detected from the checkpoint)
+    # Trained checkpoint (method auto-detected from the checkpoint)
     python -m src.eval --config configs/zero_shot.yaml \
         --checkpoint checkpoints/runs/decoder_only_seed0/best.pth
 
     # Smoke test on 8 images
     python -m src.eval --config configs/zero_shot.yaml --quick
 
-The config provides everything *not* tied to the trained method (test sets,
-batch size, base MedSAM checkpoint, output paths). The --checkpoint flag,
-when set, overrides the config's `method` and `method_kwargs` with whatever
-was used at training time.
+The config provides everything not tied to the trained method (test sets, batch
+size, base MedSAM checkpoint, output paths). --checkpoint overrides the config's
+`method` and `method_kwargs` with what was used at training time.
 """
 from __future__ import annotations
 
@@ -113,10 +112,8 @@ def predict_from_embeddings(
 ) -> torch.Tensor:
     """Run prompt encoder + mask decoder over precomputed image embeddings.
 
-    Useful when multiple methods share the same encoder (e.g. zero_shot and
-    decoder_only both use the unmodified base MedSAM encoder) — compute the
-    expensive encoder forward once, run cheap decoders on the same embeddings.
-    Returns (B, H, W) uint8 mask predictions.
+    Lets methods sharing the same encoder (e.g. zero_shot and decoder_only)
+    compute the encoder forward once and reuse it. Returns (B, H, W) uint8.
     """
     masks_out = []
     for i in range(image_embeddings.shape[0]):
@@ -141,10 +138,8 @@ def predict_from_embeddings(
 
 @torch.no_grad()
 def predict_batch(sam, images: torch.Tensor, bboxes: torch.Tensor) -> torch.Tensor:
-    """Method-agnostic forward. Works for zero-shot or any trained method —
-    sam.image_encoder is whatever wrapper was applied at setup time.
-
-    Returns (B, H, W) uint8 mask predictions.
+    """Method-agnostic forward (sam.image_encoder is whatever wrapper setup
+    applied). Returns (B, H, W) uint8 mask predictions.
     """
     H, W = images.shape[-2:]
     image_embeddings = sam.image_encoder(images)  # (B, 256, H/16, W/16)
@@ -152,21 +147,17 @@ def predict_batch(sam, images: torch.Tensor, bboxes: torch.Tensor) -> torch.Tens
 
 
 def evaluate(cfg: dict, args: argparse.Namespace) -> int:
-    # User override (--device) or config preference, otherwise auto-pick
-    # the best of CUDA > MPS > CPU. The config historically says "cuda";
-    # if CUDA isn't available we silently consider MPS too, instead of
-    # going straight to CPU.
+    # --device, else config preference, else auto-pick CUDA > MPS > CPU. Configs
+    # often say "cuda"; if CUDA is absent, fall through to auto-pick (MPS/CPU).
     preferred = args.device or cfg["eval"].get("device")
     if preferred == "cuda" and not torch.cuda.is_available():
-        # config asked for CUDA but it's not here — let auto-pick reach MPS/CPU
         preferred = None
     device = get_device(prefer=preferred)
 
     image_size = cfg["model"]["image_size"]
     print(f"[eval] device={device} ({device_name(device)}) image_size={image_size}")
 
-    # Load base MedSAM (always — even for trained methods, this provides the
-    # frozen backbone that the trainable_state will overlay onto).
+    # Always load base MedSAM; trained methods overlay trainable_state onto it.
     base_ckpt = REPO_ROOT / cfg["model"]["checkpoint"]
     sam = load_medsam(base_ckpt, arch=cfg["model"]["arch"], device=device)
 

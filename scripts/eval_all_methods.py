@@ -1,38 +1,21 @@
 """In-process orchestrator: evaluate zero_shot + every trained checkpoint
-across all test sets in a single Python process.
+across all test sets in one Python process.
 
-Replaces the two-command sequence:
-    python -m src.eval --config configs/zero_shot.yaml
-    python scripts/eval_all_checkpoints.py --config configs/zero_shot.yaml
+Replaces running `python -m src.eval` then `eval_all_checkpoints.py`.
+Faster because:
+  1. One Python startup + import (monai/tensorflow load once).
+  2. One read of the 358 MB base .pth; every method's SAM is built from
+     the in-memory state dict.
+  3. zero_shot and decoder_only share the base encoder, so the encoder
+     forward runs once per batch and two decoders run on the embeddings.
 
-Optimizations vs. the old subprocess-based flow:
-
-  1. Single Python startup + import. monai/tensorflow only loads once
-     (vs once per checkpoint subprocess), saving ~5s × N_checkpoints.
-
-  2. Single load of base MedSAM weights from disk. The 358 MB .pth file
-     reads once into a CPU state dict; every method's SAM is built from
-     that in-memory dict (saves ~2-3s × N_checkpoints).
-
-  3. SHARED ENCODER for zero_shot + decoder_only. Both methods use the
-     unmodified base MedSAM image encoder (decoder_only freezes it,
-     zero_shot doesn't touch it). We compute the encoder forward ONCE per
-     batch and run two different mask decoders on the same embeddings.
-     The encoder is the dominant per-batch cost for these PEFT-style
-     methods, so this roughly halves their combined wall-clock time.
-
-The output (results/runs.csv rows, per-image CSVs, log lines) is
-intentionally indistinguishable from the old commands — same numeric
-values, same column order — so plots.py / summary_table.csv consumers
-don't care which orchestrator produced the rows.
+Output (runs.csv rows, per-image CSVs, logs) matches the old commands
+exactly, so downstream consumers don't care which produced it. VPT/LoRA/
+full_ft have per-method encoders, so they fall back to a per-method loop.
 
 Usage:
     python scripts/eval_all_methods.py --config configs/zero_shot.yaml
     python scripts/eval_all_methods.py --config configs/zero_shot.yaml --quick
-
-For VPT-shallow, VPT-deep, LoRA, full_ft — the encoder differs per method
-(different prompts / adapters / weights), so we fall back to a per-method
-loop. Still cheaper than subprocess relaunches.
 """
 from __future__ import annotations
 
@@ -43,9 +26,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-# Make the repo root importable so `from src...` works when this script is
-# run directly (i.e. `python scripts/eval_all_methods.py`). Python only
-# auto-adds the script's directory to sys.path, not the project root.
+# Add repo root to sys.path so `from src...` works when run directly.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
@@ -65,10 +46,6 @@ from src.models.methods import setup_method  # noqa: E402
 REPO_ROOT = _REPO_ROOT
 
 
-# ----------------------------------------------------------------------------
-# CLI + config
-# ----------------------------------------------------------------------------
-
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("--config", required=True, type=Path)
@@ -79,7 +56,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--quick", action="store_true",
-        help="Run on first 8 images per dataset — smoke-test mode.",
+        help="Run on first 8 images per dataset (smoke-test mode).",
     )
     p.add_argument("--device", default=None, help="cuda | mps | cpu (default: auto)")
     p.add_argument(
@@ -96,10 +73,6 @@ def load_config(path: Path) -> dict:
     with open(path) as f:
         return yaml.safe_load(f)
 
-
-# ----------------------------------------------------------------------------
-# Per-checkpoint helpers
-# ----------------------------------------------------------------------------
 
 def _read_checkpoint(ckpt_path: Path) -> dict:
     """Pull method/method_kwargs/run_name/seed/trainable_state out of a .pth."""
@@ -123,10 +96,6 @@ def _apply_method_and_weights(sam, info: dict, device: str) -> dict:
     sam.load_state_dict(trainable_state, strict=False)
     return param_info
 
-
-# ----------------------------------------------------------------------------
-# Per-dataset loader + result helpers
-# ----------------------------------------------------------------------------
 
 def _make_loader(ds, cfg: dict, quick: bool) -> DataLoader:
     if quick:
@@ -178,10 +147,7 @@ def _metric_triple(pred, gt):
     return dice_score(pred, gt), iou_score(pred, gt), hd95(pred, gt)
 
 
-# ----------------------------------------------------------------------------
 # Group 1: zero_shot + decoder_only (shared encoder)
-# ----------------------------------------------------------------------------
-
 def eval_shared_encoder_group(
     cfg: dict, args, device: str, base_state_dict: dict, do_ckpt_path: Path,
 ) -> list[dict]:
@@ -229,10 +195,10 @@ def eval_shared_encoder_group(
                 masks_gt = batch["mask"].cpu().numpy()
                 H, W = images.shape[-2:]
 
-                # ONE encoder pass — both methods share base encoder weights
+                # One encoder pass; both methods share base encoder weights
                 embeddings = sam_zs.image_encoder(images)
 
-                # Two cheap decoders on the same embeddings
+                # Two decoders on the same embeddings
                 zs_preds = predict_from_embeddings(
                     sam_zs, embeddings, bboxes, H, W
                 ).cpu().numpy()
@@ -262,7 +228,7 @@ def eval_shared_encoder_group(
             agg = aggregate_metrics(per_image)
             print(
                 f"[multi-eval] {ds_name} / {method}: "
-                f"dice={agg['dice_mean']:.4f}±{agg['dice_std']:.4f} "
+                f"dice={agg['dice_mean']:.4f}+/-{agg['dice_std']:.4f} "
                 f"iou={agg['iou_mean']:.4f} hd95={agg['hd95_mean']:.2f}px "
                 f"n={len(per_image)}"
             )
@@ -280,10 +246,7 @@ def eval_shared_encoder_group(
     return rows
 
 
-# ----------------------------------------------------------------------------
 # Groups 2+: per-method eval (VPT-shallow, VPT-deep, LoRA, full_ft)
-# ----------------------------------------------------------------------------
-
 def eval_one_checkpoint(
     cfg: dict, args, device: str, base_state_dict: dict, ckpt_path: Path,
 ) -> list[dict]:
@@ -335,7 +298,7 @@ def eval_one_checkpoint(
         peak_mb = peak_memory_mb(device)
         agg = aggregate_metrics(per_image)
         print(
-            f"[multi-eval] {ds_name}: dice={agg['dice_mean']:.4f}±{agg['dice_std']:.4f} "
+            f"[multi-eval] {ds_name}: dice={agg['dice_mean']:.4f}+/-{agg['dice_std']:.4f} "
             f"iou={agg['iou_mean']:.4f} hd95={agg['hd95_mean']:.2f}px "
             f"n={len(per_image)} time={elapsed:.1f}s peak={peak_mb:.0f}MB"
         )
@@ -352,10 +315,7 @@ def eval_one_checkpoint(
     return rows
 
 
-# ----------------------------------------------------------------------------
-# Zero-shot fallback (used only when no decoder_only checkpoint exists)
-# ----------------------------------------------------------------------------
-
+# Zero-shot fallback, used only when no decoder_only checkpoint exists
 def eval_zero_shot_only(cfg, args, device, base_state_dict):
     arch = cfg["model"]["arch"]
     image_size = cfg["model"]["image_size"]
@@ -401,10 +361,6 @@ def eval_zero_shot_only(cfg, args, device, base_state_dict):
     return rows
 
 
-# ----------------------------------------------------------------------------
-# Results CSV append
-# ----------------------------------------------------------------------------
-
 def append_to_runs_csv(rows: list[dict], runs_path: Path) -> None:
     runs_path.parent.mkdir(parents=True, exist_ok=True)
     file_exists = runs_path.exists() and runs_path.stat().st_size > 0
@@ -417,10 +373,6 @@ def append_to_runs_csv(rows: list[dict], runs_path: Path) -> None:
     print(f"\n[multi-eval] appended {len(rows)} rows to {runs_path}")
 
 
-# ----------------------------------------------------------------------------
-# Main
-# ----------------------------------------------------------------------------
-
 def main() -> int:
     args = parse_args()
     cfg = load_config(args.config)
@@ -432,8 +384,8 @@ def main() -> int:
         f"image_size={image_size} batch={batch_size}"
     )
 
-    # Load base MedSAM into CPU state dict ONCE. Every method-specific SAM
-    # is built from this in-memory dict — no repeated 358 MB disk reads.
+    # Load base MedSAM into a CPU state dict once; every method-specific SAM
+    # is built from this in-memory dict (no repeated 358 MB disk reads).
     base_ckpt = REPO_ROOT / cfg["model"]["checkpoint"]
     print(f"[multi-eval] loading base weights from {base_ckpt}")
     t0 = time.time()
@@ -459,20 +411,18 @@ def main() -> int:
             cfg, args, device, base_state_dict, do_ckpt,
         ))
     else:
-        print("[multi-eval] no decoder_only checkpoint — running zero_shot standalone")
+        print("[multi-eval] no decoder_only checkpoint, running zero_shot standalone")
         all_rows.extend(eval_zero_shot_only(cfg, args, device, base_state_dict))
 
     # ---- Groups 2+: standard per-method eval ----
     for ckpt in checkpoints:
         if "decoder_only" in ckpt.parent.name:
-            continue  # already handled in Group 1
+            continue  # handled in Group 1
         all_rows.extend(eval_one_checkpoint(
             cfg, args, device, base_state_dict, ckpt,
         ))
 
-    # Write all rows at the end (single append, ordered by group)
-    # --out-csv overrides the config's results_csv when set. Useful for keeping
-    # pm=0 and pm=20 baselines in separate files.
+    # --out-csv overrides the config's results_csv (keeps pm=0/pm=20 separate).
     if args.out_csv is not None:
         runs_path = args.out_csv if args.out_csv.is_absolute() else REPO_ROOT / args.out_csv
     else:

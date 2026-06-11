@@ -1,36 +1,18 @@
 """Probe-set construction and base-feature caching for CKA-aware training.
 
-We need a small, fixed batch of images that gets forwarded through both the
-base MedSAM model (frozen) and the current trainable model at every training
-step, so we can compute CKA between their decoder activations.
+A small fixed batch forwarded through both the frozen base model and the current
+trainable model each step, so we can compare decoder activations via CKA.
 
-Design choices:
+Notes:
+  - Probe built once at startup; same images every step (reproducible via probe_seed).
+  - Multi-modal: 12 ISIC + 10 BUSI + 10 CBIS train images (disjoint from test),
+    targeting the far-OOD modalities fine-tuning otherwise breaks.
+  - Base activations cached once; each step only forwards the trainable model.
+  - Synthetic center bbox (no GT masks for BUSI/CBIS train); we only care about
+    representational structure, so the exact box doesn't matter as long as both
+    models see the same one.
 
-  - Probe is constructed **once** at training startup. The same 32 images are
-    used at every step throughout training. Reproducible via `probe_seed`.
-
-  - Multi-modal composition: 12 ISIC train + 10 BUSI + 10 CBIS-DDSM (train
-    splits, disjoint from any test data we evaluate on). This tells the
-    optimizer "preserve decoder structure on dermoscopy AND ultrasound AND
-    mammography images" — directly targeting the far-OOD modalities that
-    fine-tuning otherwise breaks.
-
-  - Base-model features are **cached once**. We forward the probe through the
-    frozen base MedSAM at startup, capture activations at the hooked layers,
-    and stash them in a dict. Every subsequent training step only needs to
-    forward the probe through the *current* (trainable) model — the base
-    activations are already in memory.
-
-  - We use **fake bounding boxes** for the probe (image-center 50% box) because
-    we don't have ground-truth masks for the BUSI/CBIS train images we're
-    sampling, and the goal here is to preserve decoder *representational
-    structure*, not segmentation accuracy. The exact bbox doesn't matter as
-    long as both models see the same one.
-
-Public API:
-
-  build_probe_batch(...)        -> dict with "image", "bbox", "image_id"
-  cache_base_activations(...)   -> dict[layer_name -> Tensor]
+API: build_probe_batch -> dict(image, bbox, image_id); cache_base_activations -> dict.
 """
 from __future__ import annotations
 
@@ -82,19 +64,14 @@ def build_probe_batch(
 ) -> dict:
     """Construct a deterministic multi-modal probe batch.
 
-    Returns a dict with:
-        image:     (N, 3, H, W) float32 — ImageNet-normalised
-        bbox:      (N, 4)       float32 — synthetic centered boxes
-        image_id:  list[str]    — provenance strings (modality_<id>)
-    where N = n_isic + n_busi + n_cbis.
-
-    Picks images by **deterministic random index** into each dataset's items
-    list, using `probe_seed`. Same probe_seed always returns the same images.
+    Returns dict(image (N,3,H,W) float32 ImageNet-normalised, bbox (N,4) synthetic
+    center boxes, image_id list[str]); N = n_isic + n_busi + n_cbis. Picks images
+    by deterministic random index per dataset, so probe_seed fixes the selection.
     """
     rng = random.Random(probe_seed)
     items: list[tuple[str, Path]] = []  # (image_id, image_path)
 
-    # ISIC train (use the train split — disjoint from test_images/)
+    # ISIC train (use the train split, disjoint from test_images/)
     isic_ds = ISIC2018(
         root=repo_root / "data",
         split="train",
@@ -106,7 +83,7 @@ def build_probe_batch(
         img_path, _msk_path, stem = isic_ds.items[i]
         items.append((f"isic_{stem}", img_path))
 
-    # BUSI — sample any class with masks; bbox is synthetic so we don't need them
+    # BUSI: sample any class; bbox is synthetic so masks don't matter
     busi_ds = BUSI(
         root=repo_root / "data" / "busi",
         image_size=image_size,
@@ -117,7 +94,7 @@ def build_probe_batch(
         img_path, _mask_paths, stem = busi_ds.items[i]
         items.append((f"busi_{stem}", img_path))
 
-    # CBIS-DDSM — use train split so we don't leak into our test eval
+    # CBIS-DDSM: use train split so we don't leak into test eval
     try:
         cbis_ds = CBISDDSM(
             root=repo_root / "data" / "cbis-ddsm",
@@ -160,42 +137,23 @@ def build_probe_batch(
 
 
 def _encoder_forward_checkpointed(encoder, x: torch.Tensor) -> torch.Tensor:
-    """Equivalent to encoder(x), but with per-block gradient checkpointing.
+    """encoder(x) with per-block gradient checkpointing to bound memory.
 
-    Why this exists:
-      The probe forward through the *current* (trainable) model needs to
-      retain activations for backward — so the CKA loss can flow gradients
-      back to the trainable params. SAM's 4 global-attention blocks each
-      materialise a (B*heads x HW x HW) attention tensor; at chunk_size=16
-      and image_size=1024 (HW=4096) that's ~6 GB per block, and across all
-      4 globals it sums to ~25 GB. Plus the train batch + base cache, this
-      OOMs a 22 GB A10.
+    The trainable-model probe forward must retain activations for backward, but
+    SAM's 4 global-attention blocks materialise ~6 GB each (~25 GB total at
+    chunk=16, HW=4096), which OOMs a 22 GB A10. Checkpointing saves only each
+    block's input on forward and recomputes one block at a time on backward, so
+    peak drops to ~7 GB. Cost: backward redoes the forward (~30% more compute),
+    paid back by the larger chunk size.
 
-      Per-block checkpointing drops the cost dramatically: during forward we
-      only save the input to each block (~50 MB at chunk=16, ~600 MB across
-      12 blocks). During backward, PyTorch re-runs one block at a time with
-      grad enabled; peak memory at any moment is one block's activations
-      (~6 GB for a global block at chunk=16). Total peak is then ~7 GB for
-      the encoder, fits comfortably.
-
-      Cost: each encoder backward effectively does the forward twice
-      (~30% more compute), but the much larger chunk size more than makes
-      up for it in wall-clock terms.
-
-    Caveat:
-      Forward hooks registered on encoder *blocks* would fire TWICE — once
-      during forward, once during backward recomputation. Our 9 sweep configs
-      only hook decoder layers (and the decoder runs AFTER the encoder, after
-      checkpointing is done), so this isn't an issue. If you ever add encoder
-      hooks AND use this path, disable checkpointing in train.py.
-
-      Only supports the raw ImageEncoderViT layout (patch_embed -> pos_embed
-      -> blocks -> neck). VPT-wrapped encoders have their own internal
-      gradient_checkpointing flag — toggle that instead, don't call this.
+    Caveat: forward hooks on encoder blocks would fire twice (forward + recompute).
+    Our sweep only hooks decoder layers, which run after the encoder, so it's fine;
+    if you add encoder hooks on this path, disable checkpointing in train.py.
+    Only supports the raw ImageEncoderViT layout; VPT-wrapped encoders have their
+    own gradient_checkpointing flag, toggle that instead.
     """
-    # Handle the unwrapped vs VPT-wrapped encoder
     if hasattr(encoder, "base") and hasattr(encoder, "_add_prompts"):
-        # VPT wrapper — delegate to its own checkpointing path
+        # VPT wrapper: delegate to its own checkpointing path
         encoder.gradient_checkpointing = True
         try:
             return encoder(x)
@@ -219,29 +177,16 @@ def cache_base_activations(
 ) -> dict[str, torch.Tensor]:
     """Forward the probe through base MedSAM once, capture activations.
 
-    Uses accumulate-mode hooks so decoder-side activations (which fire once per
-    sample inside the SAM mask_decoder loop) are concatenated into a single
-    (B_probe, ...) tensor matching what a batched forward would have produced.
-
-    Args:
-        base_sam: frozen base MedSAM (eval mode).
-        probe_batch: output of `build_probe_batch`.
-        layer_names: which layers to capture; must match the names hooked on the
-            trainable model so we compare like-for-like.
-        encoder_chunk: micro-batch size for the image encoder forward.
-            Defaults to 4 — keeps peak activation memory near baseline training
-            (batch=1) while reducing the number of encoder forwards. Drop to 2
-            or 1 if you OOM on a shared GPU.
-
-    Returns:
-        dict mapping layer_name -> Tensor (B_probe, ...). No grad.
+    Accumulate-mode hooks concat the per-sample decoder activations into a single
+    (B_probe, ...) tensor. layer_names must match the trainable-model hooks so we
+    compare like-for-like. encoder_chunk is the encoder micro-batch (default 4 keeps
+    peak memory near baseline; drop to 2 or 1 if you OOM). Returns dict of tensors, no grad.
     """
     base_sam.eval()
     with register_hooks(base_sam, layer_names, detach=True, accumulate=True) as hh:
         _run_probe_forward(base_sam, probe_batch, hook_handle=hh,
                            encoder_chunk=encoder_chunk)
-        # Clone so we don't keep references to internal tensors that might be
-        # mutated by later forward passes.
+        # Clone so later forwards can't mutate the cached tensors.
         return {name: act.clone() for name, act in hh.stacked().items()}
 
 
@@ -255,23 +200,17 @@ def _run_probe_forward(
 ) -> None:
     """Forward pass through the full SAM pipeline on the probe batch.
 
-    Runs image_encoder in micro-batches of `encoder_chunk` (keeps peak memory
-    bounded), then for each image: prompt_encoder + mask_decoder (per-sample,
-    matching `src/train.forward_with_prompt`'s iteration pattern).
-
-    Set `use_grad_checkpoint=True` for the current (trainable) model probe
-    forward — it enables per-block gradient checkpointing on the encoder,
-    which lets us use a larger encoder_chunk (e.g., 16 instead of 4) without
-    OOM on a 22 GB A10. Leave False for the base-model (no_grad) cache step.
-
-    If `hook_handle` is in accumulate mode, callers must `.clear()` it before
-    calling this function and read `.stacked()` afterwards.
+    Encoder runs in micro-batches of encoder_chunk; then per-image prompt_encoder
+    + mask_decoder, matching src/train.forward_with_prompt's per-sample loop.
+    use_grad_checkpoint=True for the trainable-model forward (lets encoder_chunk grow
+    without OOM); leave False for the no_grad base cache. Accumulate-mode hook_handle
+    must be .clear()'d before this call and read via .stacked() after.
     """
     images = probe_batch["image"]
     bboxes = probe_batch["bbox"]
     B = images.shape[0]
 
-    # ---- Image encoder: micro-batched to bound peak activation memory ----
+    # Image encoder: micro-batched to bound peak activation memory
     emb_chunks = []
     for start in range(0, B, encoder_chunk):
         chunk = images[start : start + encoder_chunk]
@@ -281,7 +220,7 @@ def _run_probe_forward(
             emb_chunks.append(sam.image_encoder(chunk))
     image_emb = torch.cat(emb_chunks, dim=0)  # (B, 256, H/16, W/16)
 
-    # ---- Per-sample prompt encoder + mask decoder ----
+    # Per-sample prompt encoder + mask decoder
     for i in range(B):
         sparse, dense = sam.prompt_encoder(
             points=None,
@@ -304,17 +243,12 @@ def run_current_probe_forward(
     encoder_chunk: int = 4,
     use_grad_checkpoint: bool = True,
 ) -> None:
-    """Forward the probe through the *current* (trainable) model for CKA.
+    """Forward the probe through the current (trainable) model for CKA.
 
-    Defaults to use_grad_checkpoint=True because the autograd graph from
-    the probe encoder forward is what blows out memory on A10. With
-    checkpointing on, encoder_chunk can safely be 16 (or larger) on a
-    22 GB dedicated GPU.
-
-    Caller must pass the same `hook_handle` (in accumulate mode) attached to
-    `sam`. We `.clear()` it here before the forward so the previous step's
-    activations are discarded; after this returns, read `hook_handle.stacked()`
-    to get the (B_probe, ...) activations for CKA computation.
+    use_grad_checkpoint defaults True because the probe encoder's autograd graph
+    is what blows out A10 memory; with it on, encoder_chunk can be 16+ on a 22 GB GPU.
+    Pass the same accumulate-mode hook_handle attached to sam; we .clear() it here,
+    then read hook_handle.stacked() after for the (B_probe, ...) activations.
     """
     if hook_handle is not None:
         hook_handle.clear()

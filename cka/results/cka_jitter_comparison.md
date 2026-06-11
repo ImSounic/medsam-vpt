@@ -22,6 +22,6 @@ Single seed for CKA, multi-seed avg for no-CKA baseline.
 
 | Training | CKA helps far-OOD? | Best at far-OOD overall? |
 |---|---|---|
-| pm=0 | BUSI +0.0326, CBIS +0.0266 → ✅ |  |
-| pm=20 | BUSI +0.0447, CBIS +0.0455 → ✅ |  |
-| rand100 | BUSI -0.0590, CBIS -0.0316 → ❌ | CKA + heavy random jitter overfits |
+| pm=0 | BUSI +0.0326, CBIS +0.0266 -> yes |  |
+| pm=20 | BUSI +0.0447, CBIS +0.0455 -> yes |  |
+| rand100 | BUSI -0.0590, CBIS -0.0316 -> no | CKA + heavy random jitter overfits |
