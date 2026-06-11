@@ -19,14 +19,16 @@ encoder similarity alone is not.
 
 ## Headline result
 
-![Rank reversal across the drift ladder](results/figures/7_rank_reversal.png)
+![Dice vs evaluation bbox jitter, by dataset and training-jitter regime](bbox_robustness/comparison/comparison_curves_3way.png)
 
-Method rankings reverse across the domain-shift ladder (dermoscopy ISIC to
-PH2 to ultrasound BUSI to mammography CBIS-DDSM). Methods that aggressively
-modify the encoder (standard LoRA, VPT) win in-domain but fall below
-zero-shot under the most extreme modality shift. Methods that leave the
-decoder pathway intact (decoder-only, encoder-only LoRA, full FT) keep
-far-OOD performance close to zero-shot.
+Training with random 0 to 100 px bounding-box jitter (rand100, dotted)
+produces the most robust models under realistic prompt noise. As the
+evaluation box is perturbed, rand100-trained models degrade far more
+gracefully than tight-box (pm=0, solid) training on every dataset, and under
+heavy prompt jitter they hold up better on the far-OOD ultrasound and
+mammography sets too. Variable-jitter training yields the most reliable
+adapted models overall. Bands are +/- std over 3 seeds; solid = pm=0
+training, dashed = pm=20, dotted = rand100.
 
 ---
 
@@ -146,23 +148,25 @@ parameter-efficient method.
 
 ## Robustness under prompt perturbation
 
-![Dice vs evaluation bbox jitter, by dataset, method, and training jitter](bbox_robustness/comparison/comparison_curves_3way.png)
-
-Dice degrades as evaluation jitter grows, but not uniformly. Full fine-tuning
-and the encoder-preserving methods have the shallowest curves; standard LoRA
-and VPT drop fastest. On BUSI at high jitter zero-shot overtakes all adapted
-models, and on CBIS-DDSM every method collapses below 0.2 Dice at pm=200.
-(Curves shown for the methods implemented on this branch; solid = pm=0
-training, dashed = pm=20, dotted = rand100, bands = +/- std over 3 seeds.)
+The headline curves above plot Dice against evaluation jitter for every
+method and training regime. Dice degrades as the box is perturbed, but not
+uniformly: full fine-tuning and the encoder-preserving methods have the
+shallowest curves, while standard LoRA and VPT drop fastest. On BUSI at high
+jitter zero-shot overtakes all adapted models, and on CBIS-DDSM every method
+collapses below 0.2 Dice at pm=200.
 
 ![Full Dice matrix: methods x datasets x evaluation jitter x training jitter](bbox_robustness/comparison/multi_heatmap_3way.png)
 
-Training jitter is a clean tradeoff, not a free win. Random 0 to 100 px
-jitter (rand100) gives the best prompt robustness on the training modality
-and the best overall adapted models, but it costs far-OOD modality transfer:
-under rand100, standard LoRA on CBIS-DDSM falls from 0.509 to 0.214 at the
-tight box. Full fine-tuning and encoder-only LoRA benefit most from variable
-jitter while keeping the smallest far-OOD penalty.
+The robustness gain is a tradeoff, not a free win. Averaged across the five
+evaluation-jitter levels, rand100 training helps in-domain and close-OOD but
+costs far-OOD modality transfer at the tight box: standard LoRA on CBIS-DDSM
+falls from 0.509 to 0.214 going pm=0 to rand100. Full fine-tuning and
+encoder-only LoRA take the smallest far-OOD penalty.
+
+![Average Dice change from pm=0 baseline per method and dataset, for pm=20 and rand100 training](bbox_robustness/comparison/delta_summary_bars.png)
+
+(Figures cover the methods implemented on this branch; encoder-only LoRA and
+LoRA + CKA are reported in the tables above.)
 
 ---
 
