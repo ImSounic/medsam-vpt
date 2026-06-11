@@ -64,3 +64,18 @@ Dataset_BUSI_with_GT
 seed_pipeline.log
 *.log
 logs/
+*.bak
+
+# Large intermediate artifacts and exploratory outputs (kept locally, not tracked)
+bbox_robustness/results*/
+results/mechanism/
+results/figures/encoder_delta.png
+
+# Internal planning doc and repro aids not part of the paper
+PROJECT_STATE.md
+colab/
+
+# Superseded feature-shift mechanism analysis (replaced by CKA)
+scripts/encoder_mechanism_analysis.py
+scripts/encoder_delta.py
+scripts/encoder_feature_shift.py
