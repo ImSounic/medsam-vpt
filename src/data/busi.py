@@ -1,12 +1,4 @@
-"""BUSI - Breast UltraSound Images (Cairo Univ., Al-Dhabyani et al. 2020).
-
-780 images: benign (487), malignant (210), normal (133). Abnormal images have
-binary masks; normal images have none and are skipped for segmentation eval.
-Far-OOD test set for skin-trained models (greyscale ultrasound vs RGB dermoscopy).
-
-Layout: Dataset_BUSI_with_GT/{benign,malignant,normal}/<class> (N).png with
-<class> (N)_mask.png. Multiple instance masks (_mask_1, _mask_2) are OR'd together.
-"""
+"""BUSI breast ultrasound far-OOD test set; abnormal images have binary masks (normal skipped), multiple instance masks OR'd together."""
 from __future__ import annotations
 
 import re
@@ -22,12 +14,7 @@ from .isic import PIXEL_MEAN, PIXEL_STD, _bbox_from_mask
 
 
 class BUSI(Dataset):
-    """BUSI breast ultrasound dataset (segmentation subset).
-
-    root contains benign/, malignant/, normal/. include_normal: keep normal-class
-    images (no mask, no segmentation contribution), default False. image_size resize
-    target. bbox_perturb_pixels = jitter (0 for eval).
-    """
+    """BUSI breast ultrasound dataset (segmentation subset)."""
 
     def __init__(
         self,
@@ -42,7 +29,7 @@ class BUSI(Dataset):
         self.image_size = image_size
         self.bbox_perturb_pixels = bbox_perturb_pixels
 
-        # Names: "<class> (N).png", masks "<class> (N)_mask[_K].png"; pair and OR at load.
+        # Masks "<class> (N)_mask[_K].png" pair to image stem and OR at load.
         classes = ["benign", "malignant"]
         if include_normal:
             classes.append("normal")
@@ -51,9 +38,8 @@ class BUSI(Dataset):
         for cls in classes:
             cls_dir = self.root / cls
             if not cls_dir.is_dir():
-                # Skip missing classes; caller must pass the correct root.
                 continue
-            # Index files by stem (without _mask suffix)
+            # Index files by stem (without _mask suffix).
             mask_re = re.compile(r"^(.+?)_mask(?:_\d+)?$")
             images = []
             masks_by_stem: dict[str, list[Path]] = {}
@@ -87,7 +73,7 @@ class BUSI(Dataset):
         img_pil = Image.open(img_path).convert("RGB")
         orig_w, orig_h = img_pil.size
 
-        # OR multiple instance masks together
+        # OR multiple instance masks together.
         if mask_paths:
             mask_arrs = []
             for mp in mask_paths:

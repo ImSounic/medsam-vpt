@@ -1,25 +1,11 @@
-"""Device selection and per-backend helpers.
-
-Auto-selects CUDA > MPS > CPU. Wraps the torch.cuda.* calls (peak memory,
-synchronize, empty_cache, seeding, pin_memory) with MPS equivalents or no-ops
-so train.py / eval.py don't branch on device everywhere.
-
-`device` is always one of "cuda" | "mps" | "cpu". AMP and pin_memory are
-CUDA-only; MPS stays fp32 (GradScaler unsupported, some ops fall back anyway).
-"""
+"""Device selection (CUDA > MPS > CPU) and per-backend helpers; AMP/pin_memory are CUDA-only."""
 from __future__ import annotations
 
 import torch
 
 
 def get_device(prefer: str | None = None) -> str:
-    """Return the best available device string.
-
-    Args:
-        prefer: optional user override ("cuda", "mps", "cpu"). If the
-            requested backend is unavailable we fall back automatically
-            and print a notice. None = auto-pick.
-    """
+    """Return the best available device string, honoring `prefer` then auto-picking."""
     if prefer is not None:
         prefer = prefer.lower()
         if prefer == "cuda":
@@ -76,7 +62,7 @@ def reset_peak_memory(device: str) -> None:
     """Reset peak-memory counter on the active accelerator. No-op on CPU."""
     if device == "cuda":
         torch.cuda.reset_peak_memory_stats()
-    # MPS has no peak-reset API; peak_memory_mb() just reports current usage.
+    # MPS has no peak-reset API; peak_memory_mb() reports current usage instead.
 
 
 def peak_memory_mb(device: str) -> float:
@@ -107,9 +93,7 @@ def empty_cache(device: str) -> None:
 
 
 def supports_amp(device: str) -> bool:
-    """CUDA only. MPS has no GradScaler and several SAM ops fall back to fp32,
-    so the speedup is unreliable.
-    """
+    """CUDA only; MPS has no GradScaler and several SAM ops fall back to fp32."""
     return device == "cuda"
 
 

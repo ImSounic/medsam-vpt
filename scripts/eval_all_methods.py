@@ -1,22 +1,4 @@
-"""In-process orchestrator: evaluate zero_shot + every trained checkpoint
-across all test sets in one Python process.
-
-Replaces running `python -m src.eval` then `eval_all_checkpoints.py`.
-Faster because:
-  1. One Python startup + import (monai/tensorflow load once).
-  2. One read of the 358 MB base .pth; every method's SAM is built from
-     the in-memory state dict.
-  3. zero_shot and decoder_only share the base encoder, so the encoder
-     forward runs once per batch and two decoders run on the embeddings.
-
-Output (runs.csv rows, per-image CSVs, logs) matches the old commands
-exactly, so downstream consumers don't care which produced it. VPT/LoRA/
-full_ft have per-method encoders, so they fall back to a per-method loop.
-
-Usage:
-    python scripts/eval_all_methods.py --config configs/zero_shot.yaml
-    python scripts/eval_all_methods.py --config configs/zero_shot.yaml --quick
-"""
+"""In-process orchestrator evaluating zero_shot + every trained checkpoint across all test sets in one process; zero_shot and decoder_only share one encoder pass, VPT/LoRA/full_ft fall back to a per-method loop."""
 from __future__ import annotations
 
 import argparse
@@ -26,7 +8,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-# Add repo root to sys.path so `from src...` works when run directly.
+# Add repo root to sys.path so `from src...` works when run directly
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
@@ -75,7 +57,7 @@ def load_config(path: Path) -> dict:
 
 
 def _read_checkpoint(ckpt_path: Path) -> dict:
-    """Pull method/method_kwargs/run_name/seed/trainable_state out of a .pth."""
+    """Pull method/method_kwargs/run_name/seed/trainable_state from a .pth."""
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     saved_cfg = ckpt.get("config", {}) or {}
     return {
@@ -90,7 +72,7 @@ def _read_checkpoint(ckpt_path: Path) -> dict:
 
 
 def _apply_method_and_weights(sam, info: dict, device: str) -> dict:
-    """Wire up the method on `sam` and load its trainable params. Returns param info."""
+    """Wire up the method on sam and load its trainable params."""
     param_info = setup_method(sam, info["method"], **info["method_kwargs"])
     trainable_state = {k: v.to(device) for k, v in info["trainable_state"].items()}
     sam.load_state_dict(trainable_state, strict=False)
@@ -151,12 +133,7 @@ def _metric_triple(pred, gt):
 def eval_shared_encoder_group(
     cfg: dict, args, device: str, base_state_dict: dict, do_ckpt_path: Path,
 ) -> list[dict]:
-    """Run zero_shot and decoder_only over each dataset, sharing the encoder pass.
-
-    Both methods share the base MedSAM image encoder (decoder_only freezes it,
-    zero_shot doesn't modify it), so we encode once per batch and run two
-    different mask decoders on the same embeddings.
-    """
+    """Run zero_shot and decoder_only per dataset sharing one encoder pass, two decoders on the same embeddings."""
     print("\n[multi-eval] === GROUP: zero_shot + decoder_only (shared encoder) ===")
     arch = cfg["model"]["arch"]
     image_size = cfg["model"]["image_size"]
@@ -384,8 +361,7 @@ def main() -> int:
         f"image_size={image_size} batch={batch_size}"
     )
 
-    # Load base MedSAM into a CPU state dict once; every method-specific SAM
-    # is built from this in-memory dict (no repeated 358 MB disk reads).
+    # Load base MedSAM into a CPU state dict once; every method-specific SAM is built from it (no repeated 358 MB reads)
     base_ckpt = REPO_ROOT / cfg["model"]["checkpoint"]
     print(f"[multi-eval] loading base weights from {base_ckpt}")
     t0 = time.time()

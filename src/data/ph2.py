@@ -1,13 +1,4 @@
-"""PH2 - dermoscopy images from ADDI (Univ. of Porto).
-
-200 dermoscopy images with manual lesion masks. Near-OOD test set: same modality
-as ISIC but different acquisition (Hospital Pedro Hispano, Portugal) - cameras,
-lighting, cohort.
-
-ADDI layout: PH2 Dataset images/IMD###/IMD###_Dermoscopic_Image/IMD###.bmp +
-IMD###_lesion/IMD###_lesion.bmp. Loader walks this and pairs images with masks;
-pass the folder via the root argument.
-"""
+"""PH2 dermoscopy near-OOD test set (same modality as ISIC, different acquisition); loader pairs IMD###_Dermoscopic_Image with IMD###_lesion masks."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -22,12 +13,7 @@ from .isic import PIXEL_MEAN, PIXEL_STD, _bbox_from_mask
 
 
 class PH2(Dataset):
-    """PH2 dermoscopy dataset.
-
-    root: parent dir of per-image subfolders (e.g. 'PH2 Dataset images'), or a dir
-    with flat images/ and masks/. image_size resize target. bbox_perturb_pixels =
-    jitter (0 for eval).
-    """
+    """PH2 dermoscopy dataset."""
 
     def __init__(
         self,
@@ -56,8 +42,7 @@ class PH2(Dataset):
             )
 
     def _collect_flat(self) -> list[tuple[Path, Path, str]]:
-        """Try flat-folder conventions: images/+masks/ or trainx/+trainy/ (Kaggle),
-        with mask names stem, _lesion (PH2 standard), or _mask."""
+        """Try flat-folder conventions images/+masks/ or trainx/+trainy/ (Kaggle) with mask names stem, _lesion, or _mask."""
         img_dir = None
         msk_dir = None
         for img_name, msk_name in (("images", "masks"), ("trainx", "trainy")):
@@ -98,7 +83,7 @@ class PH2(Dataset):
         return None
 
     def _collect_original(self) -> list[tuple[Path, Path, str]]:
-        # Per-image folders matching IMD\d+
+        # Per-image folders matching IMD\d+.
         items = []
         for case_dir in sorted(self.root.iterdir()):
             if not case_dir.is_dir():

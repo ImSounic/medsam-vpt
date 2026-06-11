@@ -1,24 +1,4 @@
-"""Bbox prompt robustness evaluation.
-
-Measures how each adaptation method degrades as the input bbox gets less
-precise. For each (method, dataset, perturb_max_px) we eval on the standard
-test split, expanding each side of the tight GT-derived bbox by an independent
-random offset in [0, perturb_max_px] px. N=5 bboxes per image, deterministically
-seeded so reruns match. Expansion only, so the bbox always contains the lesion
-(a doctor's loose-but-containing box).
-
-The 5 bboxes per image go through one batched decoder call (SAM does
-multi-prompt natively); bit-identical to 5 separate calls but ~3x faster.
-
-Output: runs.csv (one row per method/dataset/level) and per_image/*.csv (one
-row per image, mean across N samples). Dataset list / batch size come from
-configs/zero_shot.yaml. The 0-px baseline lives in ../results/runs.csv and is
-not recomputed here (deterministic at 0 px).
-
-Usage:
-    python bbox_robustness/eval_bbox_robust.py --config configs/zero_shot.yaml
-    python bbox_robustness/eval_bbox_robust.py --config configs/zero_shot.yaml --quick
-"""
+"""Bbox prompt robustness evaluation: expand each tight-bbox side by a random offset in [0, perturb_max_px], N=5 deterministically-seeded samples per image."""
 from __future__ import annotations
 
 import argparse
@@ -96,10 +76,7 @@ def load_config(path: Path) -> dict:
 
 
 def make_rng(image_id: str, perturb_max: int, sample_idx: int) -> np.random.Generator:
-    """Deterministic RNG keyed on (image_id, perturb level, sample idx), so the
-    same (image, level, sample) always yields the same bbox regardless of
-    dataloader ordering or worker count.
-    """
+    """Deterministic RNG keyed on (image_id, perturb level, sample idx), independent of dataloader ordering or worker count."""
     seed_str = f"{image_id}|{perturb_max}|{sample_idx}"
     seed = int(hashlib.sha1(seed_str.encode()).hexdigest()[:8], 16)
     return np.random.default_rng(seed)
@@ -111,12 +88,7 @@ def expand_bbox(
     image_size: int,
     rng: np.random.Generator,
 ) -> np.ndarray:
-    """Expand each side independently by a random offset in [0, perturb_max].
-
-    tight_bbox is (4,) [x1,y1,x2,y2] in pixel coords. Result is clamped to
-    [0, image_size-1] and always contains the input bbox. rng is the
-    deterministic generator from make_rng.
-    """
+    """Expand each side independently by a random offset in [0, perturb_max], clamped to [0, image_size-1] so it always contains the input bbox."""
     x1, y1, x2, y2 = tight_bbox
     dx_left = rng.integers(0, perturb_max + 1)
     dy_top = rng.integers(0, perturb_max + 1)
@@ -153,13 +125,7 @@ def apply_method_and_weights(sam, info: dict, device: str) -> dict:
 def decode_image_with_prompts(
     sam, image_embedding: torch.Tensor, bboxes: torch.Tensor, H: int, W: int
 ) -> torch.Tensor:
-    """Run prompt encoder + mask decoder for K box prompts on one image.
-
-    image_embedding is (1, 256, H/16, W/16) for a single encoded image, bboxes
-    is (K, 4) independent prompts, H/W are the output resolution. Returns
-    (K, H, W) uint8 masks where mask[i] corresponds to bboxes[i]. Bit-identical
-    to K separate single-prompt calls but uses SAM's native batching (~3x).
-    """
+    """Run prompt encoder + mask decoder for K box prompts on one image via SAM's native batching; bit-identical to K separate single-prompt calls but ~3x faster."""
     sparse, dense = sam.prompt_encoder(points=None, boxes=bboxes, masks=None)
     low_res, _ = sam.mask_decoder(
         image_embeddings=image_embedding,
@@ -210,10 +176,7 @@ def build_runs_row(
 
 
 def save_per_image_csv(rows: list, run_name: str, ds_name: str, perturb_max: int) -> Path:
-    """Per-image CSV: one row per image, mean+std across N samples.
-
-    Columns: image_id, dice_mean, dice_std, iou_mean, iou_std, hd95_mean, hd95_std
-    """
+    """Per-image CSV: one row per image, mean+std across N samples."""
     p = OUT_DIR / "per_image" / f"{run_name}_{ds_name}_pm{perturb_max}.csv"
     p.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = [
@@ -243,9 +206,7 @@ def eval_method_on_datasets(
         loader = make_loader(ds, cfg, args.quick)
         reset_peak_memory(device)
 
-        # Per-perturb-level accumulators, one entry per image:
-        #   per_image_means[pm]: mean over N samples, feeds runs.csv aggregation
-        #   per_image_csv_rows[pm]: mean+std over N samples, written to per_image/*.csv
+        # Per-perturb-level accumulators: means feed runs.csv aggregation, csv_rows (mean+std) go to per_image/*.csv
         per_image_means = {pm: [] for pm in perturb_levels}
         per_image_csv_rows = {pm: [] for pm in perturb_levels}
 
@@ -344,8 +305,7 @@ def main() -> int:
     print(f"[bbox-robust] perturb levels (max px per side): {args.perturb_levels}")
     print(f"[bbox-robust] samples per image per level: {args.n_samples}")
 
-    # Apply --out-dir override before any save_per_image_csv calls, via the
-    # module-level global so helpers see the same path.
+    # Apply --out-dir override via the module-level global before any save_per_image_csv calls
     global OUT_DIR
     if args.out_dir is not None:
         OUT_DIR = args.out_dir if args.out_dir.is_absolute() else REPO_ROOT / args.out_dir

@@ -1,9 +1,4 @@
-"""ISIC 2018 Task 1 (Lesion Boundary Segmentation) dataset.
-
-Item dict: image (3,H,W float32, ImageNet-normalised), mask (H,W uint8, 0/1),
-bbox (4, float32 [x1,y1,x2,y2] in image_size coords), image_id, orig_size (H,W).
-bbox comes from the GT mask; jittered during training, tight box at eval.
-"""
+"""ISIC 2018 Task 1 lesion-boundary segmentation dataset; images ImageNet-normalised and bbox derived from the GT mask (jittered in training, tight at eval)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -24,13 +19,7 @@ def _bbox_from_mask(
     perturb_px: int = 0,
     random_perturb: bool = False,
 ) -> np.ndarray:
-    """Tight bbox around mask>0, optionally perturbed. Returns [x1,y1,x2,y2]
-    inclusive in mask coords; full image if mask is empty.
-
-    perturb_px: max +/- displacement per corner (0 = exact tight box).
-    random_perturb: if True, sample actual magnitude from uniform [0, perturb_px]
-        per call (wide prompt-quality distribution); if False, use perturb_px directly.
-    """
+    """Tight [x1,y1,x2,y2] bbox around mask>0 (full image if empty), optionally perturbed; random_perturb samples magnitude from uniform [0, perturb_px] per call."""
     ys, xs = np.where(mask > 0)
     if len(xs) == 0:
         H, W = mask.shape
@@ -51,12 +40,7 @@ def _bbox_from_mask(
 
 
 class ISIC2018(Dataset):
-    """ISIC 2018 Task 1 segmentation dataset.
-
-    root has {split}_images and {split}_masks subdirs. split in train/val/test.
-    image_size resize target (1024 for native MedSAM). bbox_perturb_pixels = max
-    jitter (0 = exact). random_perturb: sample jitter magnitude per item (training).
-    """
+    """ISIC 2018 Task 1 segmentation dataset."""
 
     def __init__(
         self,

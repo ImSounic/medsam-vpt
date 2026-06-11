@@ -1,15 +1,4 @@
-"""Generate seed-1 and seed-2 training configs from the seed-0 ones.
-
-For each of the 15 base configs (5 methods x 3 trainings), produce a seed-1
-and seed-2 variant, e.g. decoder_only_pm20.yaml -> decoder_only_seedN_pm20.yaml.
-
-Each new config differs in three fields:
-  - seed: 0 -> N
-  - name: <method>_seed0[_suffix] -> <method>_seedN[_suffix]
-  - output.checkpoint_dir: checkpoints/runs[_suffix] -> checkpoints/runs_seedN[_suffix]
-
-Writes 15 yaml files per seed to configs/. Text-mode rewrite to keep comments.
-"""
+"""Generate seed-1 and seed-2 training configs from the 15 seed-0 ones via text-mode rewrite of seed/name/checkpoint_dir."""
 from __future__ import annotations
 
 import re
@@ -44,9 +33,7 @@ EXTRA_SEEDS = [1, 2]
 
 
 def transform_config_text(text: str, seed: int, suffix: str) -> str:
-    """Rewrite seed/name/checkpoint_dir in a config's raw YAML text. Text-mode
-    (not YAML round-trip) to keep comments and whitespace.
-    """
+    """Rewrite seed/name/checkpoint_dir in raw YAML text (text-mode to keep comments)."""
     out = text
 
     # 1. seed: 0 -> seed: N (whole-line match for safety)
@@ -67,9 +54,7 @@ def transform_config_text(text: str, seed: int, suffix: str) -> str:
         flags=re.MULTILINE,
     )
 
-    # 3. output.checkpoint_dir: checkpoints/runs[_suffix] -> runs_seedN[_suffix].
-    # Match only the checkpoint_dir line; the medsam_vit_b.pth path also has
-    # "checkpoints/" in it.
+    # 3. checkpoint_dir: runs[_suffix] -> runs_seedN[_suffix]; match only that line since medsam_vit_b.pth also has "checkpoints/"
     def repl_ckptdir(m):
         prefix = m.group(1)
         old_value = m.group(2)  # "runs", "runs_pm20", etc.
@@ -91,7 +76,7 @@ def new_config_name(source_name: str, seed: int, suffix: str) -> str:
     """decoder_only_pm20.yaml + seed=1 -> decoder_only_seed1_pm20.yaml"""
     method = source_name.replace(".yaml", "")
     if suffix:
-        # method was e.g. "decoder_only_pm20"; strip the suffix to get "decoder_only"
+        # strip the suffix from e.g. "decoder_only_pm20" to get "decoder_only"
         method = method[: -len(suffix)]
     return f"{method}_seed{seed}{suffix}.yaml"
 

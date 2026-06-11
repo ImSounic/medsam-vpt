@@ -1,20 +1,4 @@
-"""Evaluation entry point. Handles zero-shot and any trained checkpoint.
-
-Usage:
-    # Zero-shot
-    python -m src.eval --config configs/zero_shot.yaml
-
-    # Trained checkpoint (method auto-detected from the checkpoint)
-    python -m src.eval --config configs/zero_shot.yaml \
-        --checkpoint checkpoints/runs/decoder_only_seed0/best.pth
-
-    # Smoke test on 8 images
-    python -m src.eval --config configs/zero_shot.yaml --quick
-
-The config provides everything not tied to the trained method (test sets, batch
-size, base MedSAM checkpoint, output paths). --checkpoint overrides the config's
-`method` and `method_kwargs` with what was used at training time.
-"""
+"""Evaluation entry point for zero-shot or any trained checkpoint (method auto-detected)."""
 from __future__ import annotations
 
 import argparse
@@ -78,11 +62,11 @@ def build_dataset(cfg: dict, ts_cfg: dict, image_size: int):
             bbox_perturb_pixels=perturb,
         )
     if kind == "ph2":
-        # Default location: data/ph2/  (can be overridden via ts_cfg["root"])
+        # Default location data/ph2/, overridable via ts_cfg["root"].
         root = REPO_ROOT / ts_cfg.get("root", "data/ph2")
         return PH2(root=root, image_size=image_size, bbox_perturb_pixels=perturb)
     if kind == "busi":
-        # Default location: data/busi/  (can be overridden via ts_cfg["root"])
+        # Default location data/busi/, overridable via ts_cfg["root"].
         root = REPO_ROOT / ts_cfg.get("root", "data/busi")
         return BUSI(
             root=root,
@@ -110,11 +94,7 @@ def predict_from_embeddings(
     H: int,
     W: int,
 ) -> torch.Tensor:
-    """Run prompt encoder + mask decoder over precomputed image embeddings.
-
-    Lets methods sharing the same encoder (e.g. zero_shot and decoder_only)
-    compute the encoder forward once and reuse it. Returns (B, H, W) uint8.
-    """
+    """Run prompt encoder + mask decoder over precomputed embeddings; returns (B, H, W) uint8."""
     masks_out = []
     for i in range(image_embeddings.shape[0]):
         sparse_embed, dense_embed = sam.prompt_encoder(
@@ -138,17 +118,14 @@ def predict_from_embeddings(
 
 @torch.no_grad()
 def predict_batch(sam, images: torch.Tensor, bboxes: torch.Tensor) -> torch.Tensor:
-    """Method-agnostic forward (sam.image_encoder is whatever wrapper setup
-    applied). Returns (B, H, W) uint8 mask predictions.
-    """
+    """Method-agnostic forward over sam.image_encoder; returns (B, H, W) uint8 predictions."""
     H, W = images.shape[-2:]
     image_embeddings = sam.image_encoder(images)  # (B, 256, H/16, W/16)
     return predict_from_embeddings(sam, image_embeddings, bboxes, H, W)
 
 
 def evaluate(cfg: dict, args: argparse.Namespace) -> int:
-    # --device, else config preference, else auto-pick CUDA > MPS > CPU. Configs
-    # often say "cuda"; if CUDA is absent, fall through to auto-pick (MPS/CPU).
+    # --device, else config preference, else auto-pick; treat config "cuda" as absent if no CUDA.
     preferred = args.device or cfg["eval"].get("device")
     if preferred == "cuda" and not torch.cuda.is_available():
         preferred = None

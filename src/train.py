@@ -1,11 +1,4 @@
-"""Training entry point. Method-agnostic: decoder-only, VPT, LoRA, full FT.
-
-Usage:
-    python -m src.train --config configs/decoder_only.yaml
-
-Checkpoints store only trainable params, not the full 93M state dict, so
-decoder-only/VPT checkpoints are ~16 MB and full FT is ~370 MB.
-"""
+"""Method-agnostic training entry point; checkpoints store only trainable params."""
 from __future__ import annotations
 
 import argparse
@@ -45,8 +38,7 @@ from src.models.methods import encoder_in_grad_path, setup_method
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# Set by main() once the device is picked. device_type kwarg for torch.autocast
-# (required even when disabled).
+# torch.autocast device_type, set by main() once the device is picked (required even when disabled).
 _AUTOCAST_DEVICE = "cuda"
 
 
@@ -100,7 +92,7 @@ def forward_with_prompt(
             dense_prompt_embeddings=dense,
             multimask_output=False,
         )
-        # Upsample low-res (256x256) to image size (HxW) for loss/metric
+        # Upsample low-res (256x256) to image size (HxW) for loss/metric.
         masks_out.append(
             F.interpolate(low_res, size=(H, W), mode="bilinear", align_corners=False)
         )
@@ -112,21 +104,7 @@ def train_one_epoch(
     *, encoder_grad: bool, amp: bool,
     cka_ctx: dict | None = None,
 ) -> dict:
-    """Train one epoch.
-
-    cka_ctx, when provided, enables CKA-aware training. Keys:
-        probe_batch    : dict from build_probe_batch (image, bbox, image_id)
-        base_acts      : dict[layer_name -> Tensor] from cache_base_activations
-        hook_handle    : HookHandle attached to `sam`
-        lambda_cka     : overall weight of L_CKA in the total loss
-        layer_weights  : dict[layer_name -> float] per-layer weight inside L_CKA
-        encoder_chunk  : probe encoder micro-batch size
-        use_grad_checkpoint : per-block checkpointing on probe encoder
-
-    Task and CKA backward run separately, freeing the task graph before the
-    probe forward. Same result as one combined backward (gradients are linear)
-    but halves peak memory; the combined graph OOMs a 22 GB A10 even at chunk=4.
-    """
+    """Train one epoch; task and CKA backward run separately to halve peak memory."""
     sam.train()
     losses, bces, dlosses, cka_losses = [], [], [], []
     per_layer_cka_history: dict[str, list[float]] = (
@@ -154,16 +132,13 @@ def train_one_epoch(
         # Drop refs so train graph is reclaimed before probe forward
         del logits, task_loss
 
-        # CKA: forward + backward (only probe graph alive here).
-        # Apply every N steps; scale lambda by N so the cumulative gradient over
-        # the window matches every-step application at the configured lambda
-        # (keeps the lambda sweep comparable across N).
+        # CKA forward+backward applied every N steps; scale lambda by N to match every-step gradient.
         cka_loss_val = 0.0
         do_cka_this_step = (cka_ctx is not None) and (step_idx % cka_every_n == 0)
         if do_cka_this_step:
             from cka.probe import run_current_probe_forward
             effective_lambda = float(cka_ctx["lambda_cka"]) * cka_every_n
-            # Probe forward in fp16 autocast (saves memory + time on encoder)
+            # Probe forward in fp16 autocast (saves memory + time on encoder).
             with torch.autocast(device_type=_AUTOCAST_DEVICE, enabled=amp):
                 run_current_probe_forward(
                     sam, cka_ctx["probe_batch"],
@@ -173,8 +148,7 @@ def train_one_epoch(
                 )
             cur_acts = cka_ctx["hook_handle"].stacked()
 
-            # CKA math in fp32 (autocast OFF): ||X^T X||_F^2 hits ~1e10 for our
-            # feature dims, over fp16's 65504 max, so fp16 gives NaN every step.
+            # CKA math in fp32 (autocast OFF): ||X^T X||_F^2 ~1e10 overflows fp16's 65504 max.
             with torch.autocast(device_type=_AUTOCAST_DEVICE, enabled=False):
                 per_layer_losses = []
                 for name, base_act in cka_ctx["base_acts"].items():
@@ -304,9 +278,7 @@ def main() -> int:
     seed = args.seed if args.seed is not None else cfg.get("seed", 0)
     set_seed(seed)
 
-    # Speed wins for fixed-shape (1024x1024) training. cudnn.benchmark autotunes
-    # the conv algorithm per input shape (~10s once, then ~15-25% faster). TF32
-    # speeds up matmul/conv on A10/A100 at fp32-level accuracy. No-ops on CPU/MPS.
+    # cudnn.benchmark + TF32 speed up fixed-shape (1024x1024) training; no-ops on CPU/MPS.
     if torch.cuda.is_available():
         torch.backends.cudnn.benchmark = True
         torch.backends.cuda.matmul.allow_tf32 = True
@@ -316,8 +288,7 @@ def main() -> int:
     method = cfg["method"]
     print(f"[train] device={device} ({device_name(device)}) method={method} seed={seed}")
 
-    # Bind the autocast device_type once; train_one_epoch/validate read the
-    # module-level constant (kwarg required even when enabled=False).
+    # Bind the autocast device_type once into the module-level constant read elsewhere.
     global _AUTOCAST_DEVICE
     _AUTOCAST_DEVICE = autocast_device_type(device)
 
@@ -350,8 +321,7 @@ def main() -> int:
     )
     print(f"[train] train_n={len(train_ds)} val_n={len(val_ds)} image_size={image_size}")
 
-    # persistent_workers keeps workers alive across epochs; prefetch_factor=4
-    # queues batches so the GPU doesn't wait on I/O. Both illegal with workers=0.
+    # persistent_workers + prefetch_factor=4 keep the GPU fed; both illegal with workers=0.
     train_nw = cfg["train"].get("num_workers", 8)
     eval_nw = cfg["eval"].get("num_workers", 8)
     train_extra = (
@@ -435,8 +405,7 @@ def main() -> int:
         del base_for_probe  # only needed for one forward
         empty_cache(device)
 
-        # Hooks on the current trainable model in accumulate mode: decoder hooks
-        # fire once per probe sample, so accumulate and stack, don't overwrite.
+        # Accumulate mode: decoder hooks fire once per probe sample, so stack don't overwrite.
         hook_handle = register_hooks(sam, layer_names, detach=False, accumulate=True)
 
         cka_ctx = {
@@ -481,10 +450,7 @@ def main() -> int:
         # Restore optimizer state (Adam moments; scheduler sets the LR)
         if "optimizer" in ckpt:
             optimizer.load_state_dict(ckpt["optimizer"])
-        # Don't load saved scheduler state: its baked-in T_max would override the
-        # current `epochs` (e.g. resuming from a 1-epoch smoke test) and break
-        # cosine annealing. Instead step the fresh scheduler completed_epochs
-        # times so the LR matches the new T_max.
+        # Step a fresh scheduler completed_epochs times instead of loading saved state, whose T_max would override current `epochs`.
         completed_epochs = int(ckpt["epoch"])
         for _ in range(completed_epochs):
             scheduler.step()
@@ -505,9 +471,7 @@ def main() -> int:
             sam, train_loader, optimizer, scaler, criterion, device,
             encoder_grad=enc_grad, amp=amp, cka_ctx=cka_ctx,
         )
-        # Thermal cooldown between train and val. ViT-B backward at 1024x1024
-        # saturates mobile GPUs and the val pass spikes memory (no checkpointing),
-        # which crashes the driver on hot hardware. Cooling for a minute fixes it.
+        # Thermal cooldown between train and val to avoid driver crashes on hot mobile GPUs.
         if cooldown_s > 0:
             print(f"[train] cooldown {cooldown_s:.0f}s before val")
             synchronize(device)

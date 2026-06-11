@@ -2,7 +2,7 @@
 
 Single seed (seed=0), 6 epochs each. Position = which decoder layers are CKA-regularised. λ = strength of the CKA loss term.
 
-Δ vs baseline = CKA-aware Dice − baseline LoRA (pm=0 training, seed 0).
+Δ vs baseline = CKA-aware Dice - baseline LoRA (pm=0 training, seed 0).
 
 
 ## ISIC 2018 (ID)

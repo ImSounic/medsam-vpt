@@ -141,11 +141,11 @@ catastrophe.
 
 | Method | pm=0 train | pm=20 train | rand100 train |
 |---|---:|---:|---:|
-| Decoder-only | **0.8280 ± 0.0006** | 0.7824 ± 0.0044 | 0.6090 ± 0.0504 (−0.219) |
-| Full FT | **0.8285 ± 0.0010** | 0.8051 ± 0.0058 | 0.6980 ± 0.0256 (−0.131) |
-| VPT-deep | 0.5725 ± 0.0090 | 0.5117 ± 0.0581 | 0.3518 ± 0.0543 (−0.221) |
-| VPT-shallow | 0.5662 ± 0.0629 | 0.4555 ± 0.0415 | 0.2759 ± 0.0383 (−0.290) |
-| LoRA | 0.5094 ± 0.0101 | 0.4370 ± 0.0949 | 0.2143 ± 0.0343 (−0.295) |
+| Decoder-only | **0.8280 ± 0.0006** | 0.7824 ± 0.0044 | 0.6090 ± 0.0504 (-0.219) |
+| Full FT | **0.8285 ± 0.0010** | 0.8051 ± 0.0058 | 0.6980 ± 0.0256 (-0.131) |
+| VPT-deep | 0.5725 ± 0.0090 | 0.5117 ± 0.0581 | 0.3518 ± 0.0543 (-0.221) |
+| VPT-shallow | 0.5662 ± 0.0629 | 0.4555 ± 0.0415 | 0.2759 ± 0.0383 (-0.290) |
+| LoRA | 0.5094 ± 0.0101 | 0.4370 ± 0.0949 | 0.2143 ± 0.0343 (-0.295) |
 
 LoRA goes from 0.509 to 0.214, a 58% relative drop just from changing
 the training-time jitter distribution. The 5 trained models now all
@@ -224,10 +224,10 @@ Hard evidence:
 |---|---:|---:|
 | LoRA × pm=0 | 0.946 | 0.498 |
 | LoRA × pm=20 | **0.713** | **0.542** (+0.044) |
-| LoRA × rand100 | 0.881 | 0.179 (−0.319) |
+| LoRA × rand100 | 0.881 | 0.179 (-0.319) |
 | Full FT × pm=0 | 0.600 | 0.828 |
-| Full FT × pm=20 | 0.645 | 0.802 (−0.027) |
-| Full FT × rand100 | **1.036** | 0.706 (−0.122) |
+| Full FT × pm=20 | 0.645 | 0.802 (-0.027) |
+| Full FT × rand100 | **1.036** | 0.706 (-0.122) |
 
 For LoRA on CBIS-DDSM, when pm=20 training pulled the encoder's CBIS
 features closer to base (shift 0.946 to 0.713), Dice improved
@@ -261,8 +261,8 @@ Hard evidence:
 | Method × training | Feature shift on CBIS-DDSM | Dice on CBIS-DDSM tight bbox |
 |---|---:|---:|
 | Decoder-only × pm=0 | 0.000 | 0.827 |
-| Decoder-only × pm=20 | 0.000 | 0.787 (−0.040) |
-| Decoder-only × rand100 | 0.000 | 0.653 (−0.174) |
+| Decoder-only × pm=20 | 0.000 | 0.787 (-0.040) |
+| Decoder-only × rand100 | 0.000 | 0.653 (-0.174) |
 
 The encoder is bit-identical to base MedSAM across all three
 trainings (feature shift = 0.0 exactly), yet Dice on CBIS-DDSM drops
@@ -519,7 +519,7 @@ All eight figures are committed under `results/figures/`:
 |---|---|
 | `1_dice_per_dataset.png` | Per-panel Dice bars with value labels for each dataset |
 | `2_pareto_id_vs_ood.png` | Dice vs trainable parameters, separately for ID and far-OOD |
-| `3_drift_gap.png` | ID−OOD Dice gap per method |
+| `3_drift_gap.png` | ID-OOD Dice gap per method |
 | `4_hd95_split.png` | Boundary error (HD95) for skin domain vs ultrasound, native scales |
 | `5_id_vs_ood_scatter.png` | ID Dice vs OOD Dice with y=x diagonal showing drift cost |
 | `6_drift_curves.png` | One line per method across the drift ladder |

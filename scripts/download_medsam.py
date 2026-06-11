@@ -1,9 +1,4 @@
-"""Download the MedSAM ViT-B checkpoint into checkpoints/medsam_vit_b.pth.
-
-Pulls from Zenodo (~358 MB), the mirror linked from bowang-lab/MedSAM. The
-HF wanglab/medsam-vit-base repo only has Transformers-format weights, not the
-segment_anything-format .pth we need.
-"""
+"""Download the MedSAM ViT-B segment_anything-format .pth (~358 MB) from Zenodo into checkpoints/medsam_vit_b.pth."""
 from __future__ import annotations
 
 import sys

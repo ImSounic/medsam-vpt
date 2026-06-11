@@ -39,7 +39,7 @@ runs/
 .ipynb_checkpoints/
 *.ipynb_checkpoints
 
-# Results — keep CSVs but ignore intermediate
+# Results - keep CSVs but ignore intermediate
 results/raw/
 results/scratch/
 
@@ -47,7 +47,7 @@ results/scratch/
 Thumbs.db
 desktop.ini
 
-# AI assistant config / artifacts — never commit
+# AI assistant config / artifacts - never commit
 .claude/
 .claude*
 CLAUDE.md

@@ -1,11 +1,4 @@
-"""Run src.eval for every checkpoint that matches a glob.
-
-Examples:
-    python scripts/eval_all_checkpoints.py --config configs/busi_eval.yaml
-    python scripts/eval_all_checkpoints.py --config configs/busi_eval.yaml --quick
-    python scripts/eval_all_checkpoints.py --config configs/busi_eval.yaml \
-        --checkpoint-glob 'checkpoints/runs/*/latest.pth'
-"""
+"""Run src.eval for every checkpoint that matches a glob."""
 from __future__ import annotations
 
 import argparse

@@ -1,13 +1,7 @@
-"""Segmentation metrics: Dice, IoU, HD95, plus bootstrap CIs.
-
-All functions accept binary numpy arrays / torch tensors of the same shape.
-Predictions and targets are expected to be 0/1.
-"""
+"""Segmentation metrics (Dice, IoU, HD95) plus bootstrap CIs over 0/1 arrays/tensors."""
 from __future__ import annotations
 
-# Silence tensorflow/tensorboard noise that monai's import chain can trigger on
-# some clusters. The env vars must be set before tensorflow is imported (hence
-# before monai), and monai is eager-imported under redirected stdout/stderr.
+# Silence tensorflow noise from monai's import chain; env vars must precede the tf import.
 import os
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
@@ -46,7 +40,7 @@ def dice_score(pred, target, eps: float = 1e-6) -> float:
     inter = np.logical_and(pred, target).sum()
     denom = pred.sum() + target.sum()
     if denom == 0:
-        return 1.0  # both empty: count as perfect
+        return 1.0  # both empty counts as perfect
     return float((2.0 * inter + eps) / (denom + eps))
 
 
@@ -62,11 +56,7 @@ def iou_score(pred, target, eps: float = 1e-6) -> float:
 
 
 def hd95(pred, target) -> float:
-    """95th-percentile Hausdorff distance in pixels.
-
-    Uses monai if available, else a scipy fallback. Returns inf if either mask
-    is empty (aggregation substitutes a finite value).
-    """
+    """95th-percentile Hausdorff distance in pixels; inf if either mask is empty."""
     pred = _to_numpy(pred).astype(bool)
     target = _to_numpy(target).astype(bool)
 

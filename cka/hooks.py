@@ -1,9 +1,4 @@
-"""Forward hooks for capturing decoder layer activations to compute CKA.
-
-Hooks grab intermediate activations without touching model code. Layer-name
-to nn.Module mapping lives in _resolve_module. Detach for the frozen base
-model; keep grads for the trainable model so CKA loss backprops.
-"""
+"""Forward hooks capturing decoder layer activations for CKA; detach frozen base, keep grads on trainable model."""
 from __future__ import annotations
 
 from typing import Iterable
@@ -14,7 +9,7 @@ from segment_anything.modeling import Sam
 
 
 def _resolve_module(sam: Sam, name: str) -> nn.Module:
-    """Resolve a layer-name string to the actual nn.Module to hook on `sam`."""
+    """Resolve a layer-name string to the nn.Module to hook on sam."""
     if name == "decoder_transformer":
         return sam.mask_decoder.transformer
     if name == "decoder_upscaling":
@@ -22,7 +17,7 @@ def _resolve_module(sam: Sam, name: str) -> nn.Module:
     if name == "decoder_iou_head":
         return sam.mask_decoder.iou_prediction_head
     if name == "decoder_mask_logits":
-        # Hook whole mask_decoder; forward returns (masks, iou_pred), we keep masks.
+        # Hook whole mask_decoder; forward returns (masks, iou_pred), keep masks.
         return sam.mask_decoder
     if name.startswith("encoder_block_"):
         try:
@@ -45,12 +40,7 @@ def _resolve_module(sam: Sam, name: str) -> nn.Module:
 
 
 def _normalize_output(name: str, output) -> torch.Tensor:
-    """Unwrap layer-specific output formats into a single tensor.
-
-    decoder_transformer returns (queries, keys), keep queries.
-    decoder_mask_logits returns (low_res_masks, iou_pred), keep masks.
-    Everything else is already a tensor.
-    """
+    """Unwrap layer-specific output formats into a single tensor."""
     if name == "decoder_transformer":
         if isinstance(output, (tuple, list)):
             return output[0]
@@ -63,15 +53,7 @@ def _normalize_output(name: str, output) -> torch.Tensor:
 
 
 class HookHandle:
-    """Registers forward hooks and exposes their activations.
-
-    accumulate=False: latest forward overwrites the previous activation. Use
-    when the module is called once per forward (encoder blocks on a batched input).
-    accumulate=True: append each call's activation per layer; .stacked() concats
-    to (B_total, ...). Needed for decoder hooks because SAM's mask_decoder runs in
-    a per-sample loop, so the hook fires once per probe image; without accumulation
-    we'd only keep the last sample.
-    """
+    """Registers forward hooks and exposes activations; accumulate=True fires once per probe sample in the per-sample decoder loop."""
 
     def __init__(
         self,
@@ -83,7 +65,7 @@ class HookHandle:
         self._handles = []
         self._detach = detach
         self._accumulate = accumulate
-        # non-accumulate: name -> Tensor (last call). accumulate: name -> list, .stacked() concats.
+        # non-accumulate: name -> last Tensor; accumulate: name -> list, .stacked() concats.
         self.activations: dict[str, torch.Tensor] = {}
         self._accum: dict[str, list[torch.Tensor]] = {}
 
@@ -105,18 +87,14 @@ class HookHandle:
         return _hook
 
     def clear(self) -> None:
-        """Reset accumulators. Call before each fresh forward pass when accumulating."""
+        """Reset accumulators; call before each fresh forward pass when accumulating."""
         if self._accumulate:
             for name in self._accum:
                 self._accum[name].clear()
         self.activations.clear()
 
     def stacked(self) -> dict[str, torch.Tensor]:
-        """Accumulate mode: name -> tensor concatenated along dim 0.
-
-        B 1-sample calls -> (B, ...), same as one batched forward would give.
-        Raises RuntimeError outside accumulate mode (use .activations instead).
-        """
+        """Accumulate mode: name -> tensor concatenated along dim 0."""
         if not self._accumulate:
             raise RuntimeError("stacked() requires accumulate=True; use .activations instead")
         out = {}
@@ -146,11 +124,5 @@ def register_hooks(
     detach: bool = False,
     accumulate: bool = False,
 ) -> HookHandle:
-    """Register forward hooks on `sam` at the requested layers.
-
-    detach: True for the frozen base model, False for the trainable model so CKA
-        loss backprops. accumulate: True for per-sample-looped modules (mask_decoder
-        and sub-layers); call .clear() before each forward and .stacked() after.
-    Returns a HookHandle. Call .remove() when done.
-    """
+    """Register forward hooks on sam at the requested layers."""
     return HookHandle(sam, layer_names, detach=detach, accumulate=accumulate)

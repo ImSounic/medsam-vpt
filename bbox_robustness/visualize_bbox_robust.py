@@ -1,27 +1,4 @@
-"""Qualitative bbox-robustness visualizations.
-
-One figure per (method, dataset, image): the same image across perturbation
-levels, one row per level, four columns:
-
-    Col 0: input + bbox (cyan = perturbed, yellow dashed = tight ref)
-    Col 1: ground-truth mask overlay (green)
-    Col 2: prediction overlay (red) with Dice / IoU
-    Col 3: TP green / FP red / FN blue breakdown
-
-Rows are perturb_max = 20, 50, 100, 200 px by default. Each row's bbox is the
-deterministic sample_idx=0 draw (same RNG scheme as eval_bbox_robust.py), so
-it matches what was scored. The encoder runs once per figure; only the
-prompt+decoder re-runs per row.
-
-Output: results/figures/qualitative/<method>__<dataset>__<image_id>.png
-
-Usage:
-    python bbox_robustness/visualize_bbox_robust.py
-    python bbox_robustness/visualize_bbox_robust.py --method lora full_ft \\
-        --dataset cbis_ddsm --n 3
-    python bbox_robustness/visualize_bbox_robust.py --strategy spread
-    python bbox_robustness/visualize_bbox_robust.py --perturb-levels 10 50 150
-"""
+"""Qualitative bbox-robustness visualizations: one figure per (method, dataset, image), rows per perturb level using the deterministic sample_idx=0 bbox."""
 from __future__ import annotations
 
 import argparse
@@ -89,11 +66,7 @@ def pick_indices_first(dataset, n: int) -> list[int]:
 def pick_indices_spread(
     run_name: str, ds_csv_name: str, perturb_max: int, dataset, n: int,
 ) -> list[int]:
-    """Pick indices spanning the per-image Dice distribution at this perturb level.
-
-    Reads results/per_image/{run}_{ds}_pm{N}.csv; falls back to first-N if it
-    isn't there. Ranks at the largest perturb level, where methods differ most.
-    """
+    """Pick indices spanning the per-image Dice distribution at this perturb level; falls back to first-N if the CSV is missing."""
     csv_path = PER_IMAGE_DIR / f"{run_name}_{ds_csv_name}_pm{perturb_max}.csv"
     if not csv_path.exists():
         print(f"  [spread] {csv_path.name} not found; using first-{n}")
@@ -162,9 +135,7 @@ def render_image_degradation(
     sam, method_label: str, dataset_name: str, item: dict,
     perturb_levels: list, device: str, out_path: Path,
 ) -> None:
-    """One image, all perturb levels stacked vertically. Each row uses a
-    different perturbed bbox; the embedding is computed once and reused.
-    """
+    """One image, all perturb levels stacked vertically; the embedding is computed once and reused across rows."""
     img_rgb = denormalize_image(item["image"])
     gt = item["mask"].numpy().astype(bool)
     tight_bbox = item["bbox"].numpy()

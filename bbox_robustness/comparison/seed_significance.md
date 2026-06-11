@@ -2,7 +2,7 @@
 
 All claims are tested **two ways**:
 
-  * **(A) Across-seed paired t-test** on per-seed dice means (n = number of (method, seed) pairs contributing to the claim). Tests one-sided H₁: mean (a − b) > 0 (or < 0 where the claim is a negative). Reported as `t_stat`, `p_one_sided`, and the empirical mean ± std of the diffs.
+  * **(A) Across-seed paired t-test** on per-seed dice means (n = number of (method, seed) pairs contributing to the claim). Tests one-sided H₁: mean (a - b) > 0 (or < 0 where the claim is a negative). Reported as `t_stat`, `p_one_sided`, and the empirical mean ± std of the diffs.
 
   * **(B) Per-image paired Wilcoxon signed-rank** on dice values averaged across 3 seeds. n = number of unique (image, method) pairs. This test has high power; the seed-level test is the conservative n=3 sanity check.
 

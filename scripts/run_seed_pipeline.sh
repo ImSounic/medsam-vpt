@@ -1,25 +1,11 @@
 #!/usr/bin/env bash
-# Run the full seed-1 + seed-2 training + eval pipeline.
-#
-# Estimated wall-clock on A10:
-#   Seed 1 training (15 methods): ~16h
-#   Seed 2 training (15 methods): ~16h
-#   Seed 1 + Seed 2 evals (12 invocations total): ~17h
-#   Aggregation: ~30s
-#   ----------------------------------------------------
-#   Total: ~50h
-#
-# Run inside tmux so it survives disconnects (tmux new -s seeds; detach with
-# Ctrl-b d; reattach with tmux attach -t seeds).
-#
-# Stops on first error (set -e). Per-step logs are tee'd so a failure can be
-# diagnosed without re-running the successful upstream steps.
+# Run the full seed-1 + seed-2 training + eval pipeline (~50h on A10); run inside tmux, stops on first error with tee'd per-step logs.
 
 set -e
 set -u
 set -o pipefail
 
-cd "$(dirname "$0")/.."   # repo root
+cd "$(dirname "$0")/.."  # repo root
 echo "[pipeline] working dir: $(pwd)"
 echo "[pipeline] started at:  $(date -Iseconds)"
 echo

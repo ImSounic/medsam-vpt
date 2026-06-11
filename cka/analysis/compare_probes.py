@@ -1,13 +1,4 @@
-"""Compare CKA sweep results across two probe compositions.
-
-Inputs under cka/results/: runs_cka_{early,mid,late}.csv (original probe,
-12 ISIC + 10 BUSI + 10 CBIS) and runs_cka_oodonly_*.csv (OOD-only probe,
-0 ISIC + 16 BUSI + 16 CBIS), plus ../../results/runs.csv for the no-CKA baseline.
-
-Outputs to cka/figures/: lambda grid, dice heatmap, delta-vs-baseline heatmap,
-best-config bars, ID-vs-CBIS tradeoff, robustness bars. Plus
-cka_probe_compare_summary.{csv,md}.
-"""
+"""Compare CKA sweep results across two probe compositions (original vs OOD-only)."""
 from __future__ import annotations
 
 import re
@@ -41,11 +32,7 @@ PROBE_LABELS = {
 
 
 def parse_run_name(run_name: str) -> tuple[str, str, float] | None:
-    """Extract (probe, position, lambda) from a run_name.
-
-    lora_cka_early_l01_seed0        -> ("original", "early", 0.1)
-    lora_cka_oodonly_early_l1_seed0 -> ("oodonly",  "early", 1.0)
-    """
+    """Extract (probe, position, lambda) from a run_name."""
     m = re.match(r"^lora_cka_(oodonly_)?(early|mid|late)_l([0-9]+)_seed\d+$", run_name)
     if not m:
         return None
@@ -58,10 +45,7 @@ def parse_run_name(run_name: str) -> tuple[str, str, float] | None:
 
 
 def load_all_results() -> pd.DataFrame:
-    """Combine all 6 CSVs (2 probes x 3 positions) into one long-form DataFrame.
-
-    Columns: probe, position, lambda, dataset, dice, iou, hd95.
-    """
+    """Combine all 6 CSVs (2 probes x 3 positions) into one long-form DataFrame."""
     frames = []
     for position in POSITIONS:
         for probe_tag, suffix in (("original", ""), ("oodonly", "_oodonly")):

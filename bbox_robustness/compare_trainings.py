@@ -1,10 +1,4 @@
-"""Three-way comparison of pm=0, pm=20, rand100 trained models, multi-seed.
-
-Reads summary_full_multiseed.csv (from scripts/aggregate_seeds.py) and writes
-overlay curves, delta heatmaps, trade-off scatters, a full Dice surface, bar
-charts, and a long-form summary CSV into bbox_robustness/comparison/.
-All numbers are mean over seeds 0,1,2 with bands/error bars at +/-1 sigma.
-"""
+"""Three-way comparison of pm=0, pm=20, rand100 trained models, mean over seeds 0,1,2 with +/-1 sigma bands."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -59,9 +53,7 @@ PERTURBS = [0, 20, 50, 100, 200]
 
 
 def load_multiseed() -> pd.DataFrame:
-    """Returns DataFrame with columns:
-       method, training, dataset, perturb_max_px, dice_mean, dice_std, n_seeds
-    """
+    """Returns multiseed DataFrame with dice_mean/dice_std renamed from the seed-aggregated columns."""
     if not INPUT_CSV.exists():
         raise FileNotFoundError(
             f"{INPUT_CSV} not found; run `python scripts/aggregate_seeds.py` first."
@@ -152,10 +144,7 @@ def plot_overlay_curves(df: pd.DataFrame, out_path: Path) -> None:
 
 
 def plot_delta_heatmap(df: pd.DataFrame, out_path: Path) -> None:
-    """Two rows of delta-Dice heatmaps vs the pm=0 baseline (top pm=20, bottom
-    rand100), one panel per dataset. Cells where |delta| exceeds 2x pooled sigma
-    get a bold annotation.
-    """
+    """Delta-Dice heatmaps vs pm=0 baseline (top pm=20, bottom rand100); cells with |delta| > 2x pooled sigma are bold."""
     fig, axes = plt.subplots(2, len(DATASET_ORDER), figsize=(20, 9),
                              sharex=True, sharey=True)
     DELTA_MAX = 0.30
@@ -501,8 +490,7 @@ def plot_delta_summary_bars(df: pd.DataFrame, out_path: Path) -> None:
 
 
 def write_summary_3way(df: pd.DataFrame, out_path: Path) -> None:
-    """One row per (method, dataset, perturb_max_px) with mean+std columns
-    for each of pm=0 / pm=20 / rand100 training, plus delta columns."""
+    """One row per (method, dataset, perturb_max_px) with mean+std per training plus delta columns."""
     methods = sorted(df["method"].unique())
     datasets = sorted(df["dataset"].unique())
     perturbs = sorted(df["perturb_max_px"].unique())

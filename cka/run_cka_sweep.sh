@@ -1,20 +1,5 @@
 #!/usr/bin/env bash
-# Run the CKA-aware LoRA sweep: 3 positions x 3 lambdas x 1 seed = 9 trainings,
-# plus 3 evals (one per position covers all 3 lambdas via --checkpoint-glob),
-# plus aggregation.
-#
-# Rough wall-clock on A10 (probe forward adds ~70% per-epoch overhead):
-#   9 trainings x ~10h:  ~90h
-#   3 evals x ~1h:       ~3h
-#   Aggregation:         <5 min
-#   Total: ~93h (~4 days)
-#
-# Run unattended:
-#   nohup bash cka/run_cka_sweep.sh > cka_sweep.log 2>&1 &
-#   tail -f cka_sweep.log
-#
-# Halts on first error (set -e). Per-step logs via tee so a failure can be
-# diagnosed without re-running successful upstream steps.
+# Run CKA-aware LoRA sweep: 3 positions x 3 lambdas = 9 trainings + 3 evals + aggregation (~93h on A10); halts on first error, per-step logs via tee.
 
 set -e
 set -u

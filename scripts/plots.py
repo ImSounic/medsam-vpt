@@ -1,11 +1,4 @@
-"""Generate report figures + summary tables from results/runs.csv.
-
-Outputs 8 PNGs (300 dpi) to results/figures/ and results/summary_table.csv:
-  1 dice per dataset, 2 pareto ID vs OOD, 3 drift gap, 4 HD95 split,
-  5 ID vs OOD scatter, 6 drift curves, 7 rank reversal, 8 summary heatmap.
-
-Run: python scripts/plots.py
-"""
+"""Generate 8 report figures (300 dpi) and summary_table.csv from results/runs.csv."""
 from __future__ import annotations
 
 from pathlib import Path

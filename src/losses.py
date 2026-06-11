@@ -1,8 +1,4 @@
-"""Segmentation losses.
-
-DiceBCELoss = (1-w)*BCE + w*Dice on a single binary mask channel. Dice helps
-when the foreground is small (most ISIC lesions cover <30% of the image).
-"""
+"""Segmentation losses: DiceBCELoss = (1-w)*BCE + w*Dice on a single binary mask channel."""
 from __future__ import annotations
 
 import torch
@@ -11,11 +7,7 @@ import torch.nn.functional as F
 
 
 def dice_loss(pred_logits: torch.Tensor, target: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
-    """Soft Dice loss.
-
-    pred_logits: (B, 1, H, W) or (B, H, W)
-    target:      (B, H, W) with 0/1 values
-    """
+    """Soft Dice loss over (B, 1, H, W) or (B, H, W) logits against 0/1 targets."""
     if pred_logits.dim() == 4:
         pred_logits = pred_logits.squeeze(1)
     pred = torch.sigmoid(pred_logits)

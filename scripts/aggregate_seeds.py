@@ -1,14 +1,4 @@
-"""Aggregate multi-seed eval results into mean +/- std across seeds.
-
-Reads tight-bbox CSVs (results/runs*.csv) and bbox-robustness CSVs
-(bbox_robustness/results*/runs.csv) for seeds 0, 1, 2 across the three
-trainings, then writes:
-  summary_full_multiseed.csv                       mean/std per cell
-  bbox_robustness/comparison/seed_error_bars.png   overlay curves with bands
-  bbox_robustness/comparison/seed_summary_table.md markdown table
-
-Run after the seed-1/seed-2 trainings and evals complete.
-"""
+"""Aggregate multi-seed eval results into mean +/- std across seeds 0, 1, 2."""
 from __future__ import annotations
 
 import csv
@@ -21,14 +11,12 @@ import pandas as pd
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Source CSV discovery: seed=0 paths plus seed{1,2} siblings.
-
 TRAININGS = ("pm=0", "pm=20", "rand100")
 SEEDS = (0, 1, 2)
 
 
 def tight_csv_for_seed(seed: int, training: str) -> Path:
-    """results/runs[_pm20|_rand100].csv (seed 0) or
-       results/runs_seedN[_pm20|_rand100].csv (seed > 0)."""
+    """Tight-bbox runs CSV for (seed, training)."""
     suffix = {"pm=0": "", "pm=20": "_pm20", "rand100": "_rand100"}[training]
     if seed == 0:
         if suffix == "":
@@ -38,8 +26,7 @@ def tight_csv_for_seed(seed: int, training: str) -> Path:
 
 
 def bbox_csv_for_seed(seed: int, training: str) -> Path:
-    """bbox_robustness/results[_pm20|_rand100]/runs.csv (seed 0) or
-       bbox_robustness/results_seedN[_pm20|_rand100]/runs.csv."""
+    """Bbox-robustness runs CSV for (seed, training)."""
     suffix = {"pm=0": "", "pm=20": "_pm20", "rand100": "_rand100"}[training]
     if seed == 0:
         if suffix == "":
@@ -78,8 +65,7 @@ TRAINING_LINESTYLES = {"pm=0": "-", "pm=20": "--", "rand100": ":"}
 
 
 def load_all_seeds() -> pd.DataFrame:
-    """Long-form DataFrame: seed, method, training, dataset, perturb_max_px,
-    dice_mean. Includes tight (pm=0 eval) and bbox-robustness (pm=20..200) rows."""
+    """Long-form DataFrame of tight (perturb 0) and bbox-robustness (perturb>0) dice rows."""
     rows = []
 
     for seed in SEEDS:
@@ -98,7 +84,7 @@ def load_all_seeds() -> pd.DataFrame:
                         "dice_mean": float(r["dice_mean"]),
                     })
 
-            # Bbox-robustness rows (perturb_max_px in {20, 50, 100, 200})
+            # Bbox-robustness rows (perturb_max_px in 20, 50, 100, 200)
             bbox_path = bbox_csv_for_seed(seed, training)
             if bbox_path.exists():
                 bbox_df = pd.read_csv(bbox_path)
@@ -113,8 +99,7 @@ def load_all_seeds() -> pd.DataFrame:
                     })
 
     df = pd.DataFrame(rows)
-    # zero_shot is identical across trainings (no checkpoint), so dedupe to one
-    # copy per (seed, dataset, perturb).
+    # zero_shot is identical across trainings (no checkpoint), so dedupe to one copy per (seed, dataset, perturb).
     df = df.drop_duplicates(
         subset=["seed", "method", "training", "dataset", "perturb_max_px"],
         keep="first",
@@ -123,7 +108,7 @@ def load_all_seeds() -> pd.DataFrame:
 
 
 def aggregate_mean_std(df: pd.DataFrame) -> pd.DataFrame:
-    """Group by (method, training, dataset, perturb), compute mean + std across seeds."""
+    """Mean + std across seeds per (method, training, dataset, perturb)."""
     agg = (
         df.groupby(["method", "training", "dataset", "perturb_max_px"])
           .agg(
@@ -149,7 +134,7 @@ def write_csv(agg: pd.DataFrame, out_path: Path) -> None:
 
 
 def write_summary_markdown(agg: pd.DataFrame, out_path: Path) -> None:
-    """Per-dataset table: method x training, cell = mean +/- std at pm=0 and pm=200."""
+    """Per-dataset method x training table, cell = mean +/- std at pm=0 and pm=200."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     lines = ["# Multi-seed summary  (mean +/- std across seeds 0, 1, 2)\n"]
 
@@ -263,7 +248,7 @@ def main() -> int:
     write_summary_markdown(agg, REPO_ROOT / "bbox_robustness" / "comparison" / "seed_summary_table.md")
     plot_curves_with_seed_bands(agg, REPO_ROOT / "bbox_robustness" / "comparison" / "seed_error_bars.png")
 
-    # n_seeds per cell, surfaces incomplete runs
+    # n_seeds per cell surfaces incomplete runs
     n_seeds_dist = agg["n_seeds"].value_counts().sort_index()
     print(f"\n[agg-seeds] n_seeds distribution across {len(agg)} cells:")
     for n, count in n_seeds_dist.items():

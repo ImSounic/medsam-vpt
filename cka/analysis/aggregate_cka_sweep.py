@@ -1,13 +1,4 @@
-"""Aggregate the 9 CKA-sweep eval CSVs into one comparison table + plots.
-
-Reads runs_cka_{early,mid,late}.csv plus results/runs.csv (LoRA pm=0 baseline).
-Each CSV has 3 trainings x 4 datasets; we keep LoRA rows, parse (position, lambda)
-from run_name, and join with the baseline.
-
-Writes to cka/results/: cka_sweep_summary.csv (long-form) and .md (grouped by dataset).
-Writes to cka/figures/: cka_sweep_grid.png (dice vs lambda per dataset, line per
-position, baseline dashed) and cka_id_vs_far_ood_tradeoff.png (ISIC vs CBIS scatter).
-"""
+"""Aggregate the 9 CKA-sweep eval CSVs into one comparison table plus plots."""
 from __future__ import annotations
 
 import re
@@ -192,8 +183,7 @@ def plot_sweep_grid(cka_df: pd.DataFrame, baseline_df: pd.DataFrame,
 
 def plot_tradeoff(cka_df: pd.DataFrame, baseline_df: pd.DataFrame,
                   out_path: Path) -> None:
-    """Scatter: x = ISIC dice (in-domain), y = CBIS dice (far-OOD).
-    One point per (position, lambda), plus the baseline LoRA point."""
+    """Scatter: x = ISIC dice (in-domain), y = CBIS dice (far-OOD), one point per (position, lambda) plus baseline."""
     fig, ax = plt.subplots(figsize=(9, 8))
 
     isic = cka_df[cka_df["dataset"] == "isic2018_test"].set_index(["position", "lambda"])

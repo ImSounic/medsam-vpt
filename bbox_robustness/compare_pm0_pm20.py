@@ -1,9 +1,4 @@
-"""Compare bbox-robustness curves between pm=0 trained and pm=20 trained models.
-
-Reads runs.csv from results/ and results_pm20/ plus the two tight-bbox
-baselines in ../results/. Writes overlay curves, a pm=20 minus pm=0 delta
-heatmap, and a side-by-side summary CSV into results_pm20/figures/.
-"""
+"""Compare bbox-robustness curves between pm=0 trained and pm=20 trained models."""
 from __future__ import annotations
 
 import sys
@@ -57,7 +52,7 @@ PERTURBS = [0, 20, 50, 100, 200]
 
 
 def load_combined() -> pd.DataFrame:
-    """Return DataFrame with columns: method, dataset, perturb_max_px, dice_mean, training."""
+    """Return combined long-form DataFrame across pm=0 and pm=20 trainings."""
     frames = []
 
     bbox0 = pd.read_csv(PM0_BBOX_CSV)
@@ -81,8 +76,7 @@ def load_combined() -> pd.DataFrame:
 
     df = pd.concat(frames, ignore_index=True)
 
-    # zero_shot appears in both the pm20 bbox CSV and the tight baseline with
-    # identical values; drop the dupes.
+    # zero_shot appears in both the pm20 bbox CSV and the tight baseline with identical values; drop the dupes.
     df = df.drop_duplicates(
         subset=["method", "dataset", "perturb_max_px", "training"],
         keep="first",

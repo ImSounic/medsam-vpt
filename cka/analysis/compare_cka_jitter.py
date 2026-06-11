@@ -1,14 +1,4 @@
-"""Compare CKA-aware LoRA across 3 bbox-jitter training regimes.
-
-Cross product: {no CKA, CKA late_l10} x {pm=0, pm=20, rand100} = 6 conditions.
-
-Inputs: summary_full_multiseed.csv (no-CKA baseline), the runs_cka_oodonly_late*
-eval CSVs (CKA tight-bbox), and bbox_robustness/results*/runs.csv (robustness
-curves for both no-CKA and CKA).
-
-Outputs to cka/figures/: tight_bbox_bars, robustness_curves, tradeoff_scatter,
-delta_heatmap. Plus cka/results/cka_jitter_comparison.{csv,md}.
-"""
+"""Compare CKA-aware LoRA across 3 bbox-jitter training regimes ({no CKA, CKA late_l10} x {pm=0, pm=20, rand100})."""
 from __future__ import annotations
 
 import re
@@ -67,7 +57,7 @@ def load_no_cka_bbox_robust() -> dict[tuple[str, str, int], float]:
             if csv_path.exists():
                 break
         else:
-            # Try multi-seed seed-1 / seed-2 average if present (fallback to whatever exists)
+            # Try multi-seed average if present, else fall back to whatever exists
             csv_path = None
             for s in ("results_seed0", "results"):
                 p = BBOX_ROBUST_DIR / f"{s}{suffix}" / "runs.csv"

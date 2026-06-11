@@ -1,15 +1,4 @@
-"""Adaptation method dispatcher.
-
-Routes a method name to its apply_* function and reports parameter counts.
-
-Methods:
-    zero_shot      everything frozen (inference only)
-    decoder_only   encoder frozen, mask decoder trainable
-    vpt_shallow    encoder frozen + VPT prompts at input + decoder
-    vpt_deep       encoder frozen + per-layer VPT prompts + decoder
-    full_ft        encoder + decoder trainable
-    lora           encoder frozen except LoRA on attn qkv + decoder
-"""
+"""Adaptation method dispatcher: routes a method name to its apply_* function and reports parameter counts."""
 from __future__ import annotations
 
 from segment_anything.modeling import Sam
@@ -53,10 +42,5 @@ def setup_method(sam: Sam, method: str, **kwargs) -> dict:
 
 
 def encoder_in_grad_path(method: str) -> bool:
-    """Whether the encoder forward must be inside the autograd graph.
-
-    True when trainable params live in the encoder (full_ft, vpt_*, lora).
-    False for decoder_only and zero_shot, where the encoder forward can run
-    under torch.no_grad() to skip activation caching (~half the memory).
-    """
+    """Whether the encoder forward must be inside the autograd graph (true for full_ft, vpt_*, lora)."""
     return method in {"full_ft", "vpt_shallow", "vpt_deep", "lora"}

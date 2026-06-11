@@ -1,16 +1,4 @@
-"""Visual Prompt Tuning for MedSAM ViT-B.
-
-Non-canonical design: standard VPT (Jia et al., ECCV 2022) prepends N
-learnable tokens to a 1D ViT sequence, but SAM's encoder is 2D throughout
-(patches as (B,H,W,C), windowed attention, 2D rel pos embeds), so
-token-prepending doesn't fit. Instead we add N learnable vectors to the
-first N spatial positions of each layer's input (additive perturbation).
-
-Param budget matches canonical VPT (shallow: N*768 = 7,680 at N=10;
-deep: 12*N*768 = 92,160 at N=10) and window attention / rel pos embeds stay
-intact. Trade-off: prompts perturb fixed spatial positions rather than
-acting as attention tokens, so slightly less expressive. Documented in paper.
-"""
+"""Visual Prompt Tuning for MedSAM ViT-B: adds learnable vectors at fixed spatial positions (additive perturbation, not token prepending, due to SAM window attention)."""
 from __future__ import annotations
 
 import torch
@@ -20,14 +8,7 @@ from segment_anything.modeling import Sam
 
 
 class VPTSAMEncoder(nn.Module):
-    """Wraps SAM's image encoder with VPT-style learnable input perturbations.
-
-    Args:
-        base_encoder: a frozen `ImageEncoderViT` instance.
-        n_prompts: number of prompt vectors per layer (per-layer for deep,
-            single set for shallow). Same as standard VPT's N.
-        mode: "shallow" | "deep".
-    """
+    """Wraps SAM's image encoder with VPT-style learnable input perturbations."""
 
     def __init__(
         self,
@@ -64,14 +45,11 @@ class VPTSAMEncoder(nn.Module):
             nn.init.normal_(p, std=0.02)
 
     def _add_prompts(self, x: torch.Tensor, prompts: torch.Tensor) -> torch.Tensor:
-        """Add prompts (n_prompts, C) to the first n_prompts row-major spatial
-        positions of x (B, H, W, C). Returns same shape.
-        """
+        """Add prompts (n_prompts, C) to the first n_prompts row-major spatial positions of x (B, H, W, C)."""
         B, H, W, C = x.shape
         N = prompts.shape[0]
         x_flat = x.reshape(B, H * W, C)
-        # Add via a zero tensor instead of in-place index assignment to keep
-        # the autograd graph clean.
+        # Add via a zero tensor instead of in-place index assignment to keep the autograd graph clean.
         pert = torch.zeros_like(x_flat)
         pert[:, :N, :] = prompts.unsqueeze(0).expand(B, -1, -1)
         x_flat = x_flat + pert
@@ -90,8 +68,7 @@ class VPTSAMEncoder(nn.Module):
             if self.mode == "deep":
                 x = self._add_prompts(x, self.layer_prompts[i])
             if self.gradient_checkpointing and self.training:
-                # Recompute block activations in backward instead of caching:
-                # ~50% less activation memory, ~30% slower.
+                # Recompute block activations in backward instead of caching (~50% less memory, ~30% slower).
                 x = cp.checkpoint(blk, x, use_reentrant=False)
             else:
                 x = blk(x)
@@ -107,14 +84,7 @@ def apply_vpt(
     gradient_checkpointing: bool = False,
     **_kwargs,
 ) -> None:
-    """Configure SAM in place for VPT.
-
-    Wraps sam.image_encoder in VPTSAMEncoder; freezes everything except the
-    prompt parameters and the mask decoder.
-
-    gradient_checkpointing: recompute encoder activations in backward instead
-        of caching (~50% less activation memory, ~30% slower). Use on 8 GB GPUs.
-    """
+    """Configure SAM in place for VPT: wrap image_encoder in VPTSAMEncoder, train only prompts and mask decoder."""
     for p in sam.parameters():
         p.requires_grad = False
 
@@ -126,10 +96,8 @@ def apply_vpt(
         mode=mode,
         gradient_checkpointing=gradient_checkpointing,
     ).to(device)
-    # Prompts are nn.Parameter (requires_grad=True by default); base encoder
-    # frozen in __init__.
+    # Prompts are nn.Parameter (requires_grad=True by default); base encoder frozen in __init__.
 
-    # Mask decoder trainable: it must turn prompt-modulated features into
-    # masks, and freezing it costs Dice for no param savings.
+    # Mask decoder trainable: turns prompt-modulated features into masks.
     for p in sam.mask_decoder.parameters():
         p.requires_grad = True

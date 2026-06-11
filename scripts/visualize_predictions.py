@@ -1,17 +1,4 @@
-"""Qualitative prediction visualizations.
-
-One figure per (method, dataset) pair, each row showing input image, GT mask,
-prediction, and TP/FP/FN error breakdown. Saved to results/figures/qualitative/.
-
-Sample selection (--strategy):
-    first   first N items (default, deterministic)
-    spread  examples spanning best/mid/worst Dice from the per-image CSV
-
-Usage:
-    python scripts/visualize_predictions.py
-    python scripts/visualize_predictions.py --method lora full_ft
-    python scripts/visualize_predictions.py --dataset busi cbis_ddsm --n 6
-"""
+"""Qualitative prediction figures (input, GT, prediction, TP/FP/FN) per (method, dataset)."""
 from __future__ import annotations
 
 import argparse
@@ -19,8 +6,7 @@ import csv
 import sys
 from pathlib import Path
 
-# Make the repo root importable so `from src...` works when this script is
-# run directly (i.e. `python scripts/visualize_predictions.py`).
+# Make the repo root importable so `from src...` works when run directly
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
@@ -91,7 +77,7 @@ def pick_indices_spread(run_name: str, ds_csv_name: str, dataset, n: int) -> lis
     # Now find those IDs in the dataset
     out = []
     for di, item in enumerate(getattr(dataset, "items", [])):
-        # ds.items is a list of tuples whose last element is image_id
+        # ds.items items are tuples whose last element is image_id
         sid = item[-1] if isinstance(item, tuple) else None
         if sid in target_ids:
             out.append(di)

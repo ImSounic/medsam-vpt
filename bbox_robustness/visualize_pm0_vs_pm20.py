@@ -1,22 +1,4 @@
-"""Side-by-side qualitative comparison: pm=0 trained vs pm=20 trained.
-
-For each (method, dataset, image), a 4-row by 4-column figure:
-
-    Rows: perturb levels 20, 50, 100, 200 px
-    Cols: input + perturbed bbox | ground truth | pm=0 pred | pm=20 pred
-
-Cols 2 and 3 show predictions with Dice; col 3 also shows delta Dice vs pm=0.
-zero_shot is skipped (same model in both trainings). The per-row bbox is the
-deterministic sample_idx=0 draw, fed to both models so the comparison is fair.
-
-Output: results_pm20/figures/comparison/<method>__<dataset>__<image_id>.png
-
-Usage:
-    python bbox_robustness/visualize_pm0_vs_pm20.py
-    python bbox_robustness/visualize_pm0_vs_pm20.py \\
-        --method vpt_shallow --dataset cbis_ddsm --n 4
-    python bbox_robustness/visualize_pm0_vs_pm20.py --strategy spread
-"""
+"""Side-by-side qualitative comparison of pm=0 vs pm=20 trained models; the deterministic sample_idx=0 bbox is fed to both so the comparison is fair."""
 from __future__ import annotations
 
 import argparse
@@ -52,8 +34,7 @@ FIG_DIR = REPO_ROOT / "bbox_robustness" / "results_pm20" / "figures" / "comparis
 # Per-image CSVs from the pm=0 eval, used by --strategy spread
 PM0_PER_IMAGE_DIR = REPO_ROOT / "bbox_robustness" / "results" / "per_image"
 
-# Checkpoint paths for both trainings. zero_shot is excluded: same model in
-# both conditions, nothing to compare.
+# Checkpoint paths for both trainings; zero_shot is excluded (same model in both conditions)
 METHODS = {
     "decoder_only": {
         "pm0":   "checkpoints/runs/decoder_only_seed0/best.pth",
@@ -106,9 +87,7 @@ def pick_indices_first(dataset, n: int) -> list[int]:
 def pick_indices_spread(
     pm0_run_name: str, ds_csv_name: str, perturb_max: int, dataset, n: int,
 ) -> list[int]:
-    """Pick indices spanning the Dice distribution at the largest perturb level
-    from the pm=0 per_image CSV. Same images are rendered for both trainings.
-    """
+    """Pick indices spanning the Dice distribution from the pm=0 per_image CSV; same images are rendered for both trainings."""
     csv_path = PM0_PER_IMAGE_DIR / f"{pm0_run_name}_{ds_csv_name}_pm{perturb_max}.csv"
     if not csv_path.exists():
         print(f"  [spread] {csv_path.name} not found; using first-{n}")

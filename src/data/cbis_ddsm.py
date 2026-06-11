@@ -1,15 +1,4 @@
-"""CBIS-DDSM - Curated Breast Imaging Subset of DDSM (Lee et al., 2017).
-
-Far-OOD test set: mammography (X-ray), different physics from dermoscopy or ultrasound.
-Kaggle: awsaf49/cbis-ddsm-breast-cancer-image-dataset, layout data/cbis-ddsm/csv/
-(dicom_info.csv etc.) + jpeg/<SeriesUID>/X-NNN.jpg.
-
-dicom_info.csv SeriesDescription labels each JPG: "full mammogram images",
-"ROI mask images" (binary, 0=bg, 255=lesion), "cropped images" (unused).
-Pairing: mask PatientID Mass-Test_P_00016_LEFT_CC_1 has a trailing abnormality
-index; the full mammogram drops that suffix. Multiple masks per mammogram are
-OR'd into one "any lesion" mask. Default split = test (PatientID contains -Test_).
-"""
+"""CBIS-DDSM mammography far-OOD test set; mask PatientID has a trailing abnormality index that the full-mammogram PID drops, and multiple masks per mammogram are OR'd into one lesion mask."""
 from __future__ import annotations
 
 import csv
@@ -25,12 +14,7 @@ from .isic import PIXEL_MEAN, PIXEL_STD, _bbox_from_mask
 
 
 class CBISDDSM(Dataset):
-    """CBIS-DDSM mammography dataset.
-
-    root = data/cbis-ddsm/ (csv/ and jpeg/). split test/train (test for OOD eval).
-    image_size resize target. bbox_perturb_pixels = jitter (0 for eval).
-    abnormality_type: all/mass/calc. Masses are larger and easier than calcifications.
-    """
+    """CBIS-DDSM mammography dataset."""
 
     def __init__(
         self,
@@ -52,8 +36,7 @@ class CBISDDSM(Dataset):
                 f" and jpeg/<SeriesUID>/*.jpg files."
             )
 
-        # Use stdlib csv, not pandas: pandas + PyTorch on Windows can hit an OpenMP
-        # DLL conflict that silently kills the process.
+        # Use stdlib csv, not pandas: pandas + PyTorch on Windows can hit an OpenMP DLL conflict that silently kills the process.
         split_tag = "-Test_" if split == "test" else "-Training_"
         fulls: list[tuple[str, str]] = []   # (PatientID, image_path)
         masks_rows: list[tuple[str, str]] = []
@@ -76,15 +59,15 @@ class CBISDDSM(Dataset):
                 elif desc == "ROI mask images":
                     masks_rows.append((pid, ipath))
 
-        # Build index: full_mammogram_PID -> list[mask_path]
+        # Build index: full_mammogram_PID -> list[mask_path].
         mask_by_pid: dict = {}
         for mpid, mpath in masks_rows:
-            # Drop trailing "_<digits>" to recover the full mammogram PID
+            # Drop trailing "_<digits>" to recover the full mammogram PID.
             parts = mpid.rsplit("_", 1)
             base_pid = parts[0] if len(parts) == 2 and parts[1].isdigit() else mpid
             mask_by_pid.setdefault(base_pid, []).append(self._resolve_path(mpath))
 
-        # Pair each full mammogram with its mask(s)
+        # Pair each full mammogram with its mask(s).
         self.items = []
         for full_pid, fpath in fulls:
             mask_paths = mask_by_pid.get(full_pid)
@@ -99,10 +82,9 @@ class CBISDDSM(Dataset):
             )
 
     def _resolve_path(self, csv_path: str) -> Path:
-        """Map dicom_info.csv image_path ('CBIS-DDSM/jpeg/<UID>/X.jpg') to
-        '<root>/jpeg/<UID>/X.jpg'."""
+        """Map dicom_info.csv image_path to <root>/jpeg/<UID>/X.jpg."""
         s = csv_path.strip()
-        # Strip prefixes used by different Kaggle redistributions
+        # Strip prefixes used by different Kaggle redistributions.
         for prefix in ("CBIS-DDSM/", "cbis-ddsm/"):
             if s.startswith(prefix):
                 s = s[len(prefix):]
@@ -118,11 +100,11 @@ class CBISDDSM(Dataset):
         img_pil = Image.open(full_path).convert("RGB")
         orig_w, orig_h = img_pil.size
 
-        # OR all instance masks into one binary mask
+        # OR all instance masks into one binary mask.
         combined = np.zeros((orig_h, orig_w), dtype=bool)
         for mp in mask_paths:
             m = np.array(Image.open(mp).convert("L"))
-            # Some masks differ slightly in size; resize to match the image
+            # Some masks differ slightly in size; resize to match the image.
             if m.shape != (orig_h, orig_w):
                 m = np.array(
                     Image.fromarray(m).resize((orig_w, orig_h), Image.NEAREST)

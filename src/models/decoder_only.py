@@ -1,10 +1,4 @@
-"""Decoder-only fine-tuning.
-
-Image encoder and prompt encoder frozen, mask decoder trainable. Prompt
-encoder stays frozen because it only handles deterministic bbox inputs
-(~6k params, no benefit). This is MedSAM's documented recipe and the
-strongest non-PEFT baseline here.
-"""
+"""Decoder-only fine-tuning: image+prompt encoder frozen, mask decoder trainable."""
 from __future__ import annotations
 
 from segment_anything.modeling import Sam

@@ -1,22 +1,4 @@
-"""LoRA fine-tuning for MedSAM. Self-contained, no peft dependency.
-
-Rank-r LoRA on the SAM image encoder's attention qkv projections: each
-block.attn.qkv (nn.Linear) is replaced with a LoRALinear that adds a
-low-rank residual to the base output.
-
-Form (Hu et al., 2021): y = W*x + (alpha/r) * (B*A*x). W is frozen
-(768 -> 2304); A (r,768) and B (2304,r) are trainable; A Kaiming-init,
-B zero-init so the initial residual is 0.
-
-Note: we apply LoRA to SAM's single fused qkv projection (768 -> 2304),
-not separate Q/K/V matrices.
-
-Trainable budget (rank=8, 12 blocks): 294,912 LoRA + 4,058,340 decoder
-= 4,353,252 (~4.65% of MedSAM).
-
-We avoid the peft library on purpose: it pulls transformers -> tensorflow,
-which conflicts with numpy>=2 on some Linux clusters and crashes at import.
-"""
+"""LoRA fine-tuning for MedSAM: one rank-r adapter wraps the fused qkv (shared across Q/K/V), no peft lib."""
 from __future__ import annotations
 
 import math
@@ -27,10 +9,7 @@ from segment_anything.modeling import Sam
 
 
 class LoRALinear(nn.Module):
-    """Wraps an nn.Linear with a trainable low-rank residual.
-
-    Frozen base at self.base; trainable params at self.lora_A / self.lora_B.
-    """
+    """Wraps an nn.Linear with a trainable low-rank residual."""
 
     def __init__(
         self,
@@ -72,17 +51,7 @@ def apply_lora(
     dropout: float = 0.0,
     **_kwargs,
 ) -> None:
-    """Configure SAM for LoRA fine-tuning, in place.
-
-    Encoder qkv linears wrapped with LoRALinear (base frozen, residual
-    trainable); prompt encoder frozen; mask decoder fully trainable.
-
-    Args:
-        sam: SAM model to configure.
-        rank: LoRA rank r. Standard value is 8.
-        alpha: LoRA scaling factor. Convention is alpha = 2 * rank.
-        dropout: LoRA-side dropout. Keep 0 for small datasets like ISIC.
-    """
+    """Configure SAM for LoRA in place: wrap encoder qkv with LoRALinear, freeze prompt encoder, train mask decoder."""
     for p in sam.parameters():
         p.requires_grad = False
 

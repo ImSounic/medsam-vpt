@@ -1,17 +1,4 @@
-"""Paired significance tests for the three headline claims.
-
-Inputs: 3 seeds x 15 (method x training) cells, with per-seed dice means and
-per-image dice CSVs at every perturb > 0.
-
-Two tests per claim:
-  (A) Across-seed paired t-test on per-seed means (n=3). Low power, but the
-      p<0.05 threshold needs mean diff > ~2.92 sigma, a strong effect.
-  (B) Per-image paired Wilcoxon signed-rank on dice averaged across the 3
-      seeds. Large n (200-1000 images), so it has the power (A) lacks.
-
-Outputs the markdown + CSV reports to bbox_robustness/comparison/.
-Run after scripts/aggregate_seeds.py produces summary_full_multiseed.csv.
-"""
+"""Paired significance tests for the three headline claims: across-seed paired t (n=3, low power) plus per-image Wilcoxon on dice pooled over 3 seeds."""
 from __future__ import annotations
 
 import csv
@@ -51,9 +38,7 @@ def bbox_runs_csv_for_seed(seed: int, training: str) -> Path:
 
 def per_image_csv_for_seed(seed: int, training: str, method: str,
                            dataset: str, perturb: int) -> Path:
-    """Returns the per-image CSV for one (seed, training, method, dataset, perturb>0).
-    zero_shot has the same per-image file regardless of seed/training.
-    """
+    """Per-image CSV for one (seed, training, method, dataset, perturb>0); zero_shot file is seed/training-independent."""
     suffix = {"pm=0": "", "pm=20": "_pm20", "rand100": "_rand100"}[training]
     if method == "zero_shot":
         return (REPO_ROOT / "bbox_robustness" / "results" / "per_image"
@@ -66,9 +51,7 @@ def per_image_csv_for_seed(seed: int, training: str, method: str,
     return ckpt_dir / f"{stem}.csv"
 
 
-# ----------------------------------------------------------------------------
 # Loaders
-# ----------------------------------------------------------------------------
 
 def load_per_seed_means(method: str, training: str, dataset: str,
                         perturb: int) -> list[float]:
@@ -92,8 +75,7 @@ def load_per_seed_means(method: str, training: str, dataset: str,
 
 def load_per_image_dice(method: str, training: str, dataset: str,
                         perturb: int) -> pd.DataFrame | None:
-    """Returns DataFrame with columns image_id, dice_seed0, dice_seed1, dice_seed2.
-    For zero_shot, all three columns are the same series."""
+    """DataFrame of per-image dice with one column per seed (same series for zero_shot)."""
     if perturb == 0:
         return None  # tight-bbox per-image only exists for seed-0 + zero_shot
 
@@ -120,9 +102,7 @@ def per_image_seed_avg(method: str, training: str, dataset: str,
     return df.mean(axis=1)
 
 
-# ----------------------------------------------------------------------------
 # Tests
-# ----------------------------------------------------------------------------
 
 @dataclass
 class ClaimResult:
@@ -140,7 +120,7 @@ class ClaimResult:
 
 
 def run_paired_t_seeds(diffs: list[float], greater_is_better: bool) -> tuple[float, float]:
-    """Paired t-test on per-seed differences (n=3). Returns (t-stat, one-sided p)."""
+    """Paired t-test on per-seed differences (n=3); returns (t-stat, one-sided p)."""
     a = np.asarray(diffs, dtype=float)
     if len(a) < 2 or a.std(ddof=1) < 1e-12:
         return float("nan"), float("nan")
@@ -152,8 +132,7 @@ def run_paired_t_seeds(diffs: list[float], greater_is_better: bool) -> tuple[flo
 
 def run_paired_wilcoxon(a: pd.Series, b: pd.Series,
                         greater_is_better: bool) -> tuple[int, float, float, float]:
-    """One-sided Wilcoxon signed-rank on per-image dice (a - b > 0).
-    Returns (n, W, one-sided p, median diff)."""
+    """One-sided Wilcoxon signed-rank on per-image dice; returns (n, W, one-sided p, median diff)."""
     common = a.index.intersection(b.index)
     diff = (a.loc[common] - b.loc[common]).dropna()
     if len(diff) < 5 or (diff == 0).all():
@@ -166,11 +145,7 @@ def run_paired_wilcoxon(a: pd.Series, b: pd.Series,
         return len(diff), float("nan"), float("nan"), float(diff.median())
 
 
-# The three claims.
-# Each claim: condition A is "better" than B on the given cell. We test
-# diff = (A - B) > 0 (greater_is_better=True), one-sided. For ">=" claims we
-# check that diff < 0 is not rejected.
-
+# Each claim tests diff = (A - B) > 0 one-sided; for ">=" claims we check diff < 0 is not rejected
 CLAIM_DEFINITIONS = [
     {
         "name": "C1a-isic",
@@ -224,8 +199,7 @@ CLAIM_DEFINITIONS = [
         "description": "**Zero-shot >= rand100-trained on CBIS-DDSM at pm=200** "
                        "(averaged across 5 PEFT methods). Tests that "
                        "rand100-trained methods do NOT beat zero-shot here.",
-        # Test (rand100 - zero_shot) > 0; if rejected (p>=0.05) then
-        # zero_shot >= rand100 is consistent with the data.
+        # Test (rand100 - zero_shot) > 0; not rejected (p>=0.05) is consistent with zero_shot >= rand100
         "cells": [
             ("decoder_only", "rand100", "cbis_ddsm", 200),
             ("vpt_shallow",  "rand100", "cbis_ddsm", 200),
@@ -259,8 +233,7 @@ def evaluate_claim(claim: dict) -> ClaimResult:
             diffs.append(a_means[i] - b_means[i])
 
     if claim.get("invert_for_pass", False):
-        # Test greater_is_better=True (a - b > 0) and expect it to fail, i.e.
-        # the data does not show a > b.
+        # Test a - b > 0 and expect it to fail (data does not show a > b)
         seed_t, seed_p = run_paired_t_seeds(diffs, greater_is_better=True)
         pass_seed = (seed_p >= 0.05) if not np.isnan(seed_p) else None
     else:
@@ -271,8 +244,7 @@ def evaluate_claim(claim: dict) -> ClaimResult:
     all_a, all_b = [], []
     for cell, base in zip(claim["cells"], claim["baseline_cells"]):
         if cell[3] == 0:
-            # tight bbox: only seed-0 per-image data exists, skip per-image
-            continue
+            continue  # tight bbox: only seed-0 per-image data exists, skip per-image
         sa = per_image_seed_avg(*cell)
         sb = per_image_seed_avg(*base)
         if sa is None or sb is None:
@@ -284,8 +256,7 @@ def evaluate_claim(claim: dict) -> ClaimResult:
     if all_a:
         a_pool = pd.concat(all_a)
         b_pool = pd.concat(all_b)
-        # pd.concat keeps duplicate image_ids across the 5 PEFT methods, which
-        # is fine: each row is a distinct (image, method) pair.
+        # duplicate image_ids across the 5 PEFT methods are fine: each row is a distinct (image, method) pair
         if claim.get("invert_for_pass", False):
             n_img, w_stat, img_p, med = run_paired_wilcoxon(a_pool, b_pool, greater_is_better=True)
             pass_image = (img_p >= 0.05) if not np.isnan(img_p) else None

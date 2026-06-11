@@ -1,4 +1,4 @@
-# Core ML — assumes torch+CUDA already installed in mlenv
+# Core ML - assumes torch+CUDA already installed in mlenv
 # Verify torch.cuda.is_available() returns True before installing the rest
 
 # Foundation model architecture

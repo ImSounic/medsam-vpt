@@ -1,8 +1,4 @@
-"""MedSAM loading helpers.
-
-MedSAM uses the SAM ViT-B architecture, only the weights differ. We build
-through segment_anything's registry and load the MedSAM checkpoint's state dict.
-"""
+"""MedSAM loading helpers: SAM ViT-B architecture with MedSAM weights loaded via segment_anything's registry."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -17,11 +13,7 @@ def load_medsam(
     arch: str = "vit_b",
     device: str | torch.device | None = None,
 ) -> Sam:
-    """Load MedSAM weights into a SAM ViT-B architecture and return it.
-
-    Loaded non-strict; missing/unexpected key counts are printed so an arch
-    mismatch surfaces instead of failing silently.
-    """
+    """Load MedSAM weights into a SAM ViT-B architecture and return it (strict=False)."""
     checkpoint_path = Path(checkpoint_path)
     if not checkpoint_path.exists():
         raise FileNotFoundError(
@@ -56,11 +48,7 @@ def load_medsam_from_state_dict(
     arch: str = "vit_b",
     device: str | torch.device | None = None,
 ) -> Sam:
-    """Build a SAM ViT-B from an already-loaded state dict (no disk I/O).
-
-    Use this to spin up multiple SAMs from the same base weights without
-    re-reading the 358 MB .pth each time.
-    """
+    """Build a SAM ViT-B from an already-loaded state dict (no disk I/O), strict=False."""
     if device is None:
         from src.device_utils import get_device
         device = get_device()

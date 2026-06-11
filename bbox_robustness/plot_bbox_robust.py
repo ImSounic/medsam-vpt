@@ -1,10 +1,4 @@
-"""Plot bbox-robustness degradation curves.
-
-Reads results/runs.csv (perturbed evals at 20/50/100/200) plus ../results/runs.csv
-for the 0-px tight baseline. Writes degradation curves, a method-x-perturb
-heatmap, a relative-drop bar chart, and a pivoted summary.csv into results/.
-Run after eval_bbox_robust.py so runs.csv exists.
-"""
+"""Plot bbox-robustness degradation curves; run after eval_bbox_robust.py so runs.csv exists."""
 from __future__ import annotations
 
 import sys
@@ -54,11 +48,7 @@ DATASET_ORDER = ["isic2018_test", "ph2", "busi", "cbis_ddsm"]
 
 
 def load_data() -> pd.DataFrame:
-    """Load robustness runs + baseline, combine into a single long-form DataFrame.
-
-    Each row: (method, dataset, perturb_max_px, dice_mean, dice_std, ...)
-    Baseline rows have perturb_max_px = 0.
-    """
+    """Load robustness runs + baseline into one long-form DataFrame; baseline rows have perturb_max_px = 0."""
     if not (RESULTS_DIR / "runs.csv").exists():
         sys.exit(f"[plot] missing {RESULTS_DIR / 'runs.csv'}; run eval_bbox_robust.py first.")
     robust = pd.read_csv(RESULTS_DIR / "runs.csv")
