@@ -1,4 +1,5 @@
 """LoRA fine-tuning for MedSAM: one rank-r adapter wraps the fused qkv (shared across Q/K/V), no peft lib."""
+
 from __future__ import annotations
 
 import math
@@ -9,8 +10,6 @@ from segment_anything.modeling import Sam
 
 
 class LoRALinear(nn.Module):
-    """Wraps an nn.Linear with a trainable low-rank residual."""
-
     def __init__(
         self,
         base_linear: nn.Linear,
@@ -26,7 +25,6 @@ class LoRALinear(nn.Module):
         in_features = base_linear.in_features
         out_features = base_linear.out_features
 
-        # nn.Linear (no bias) for A and B to inherit standard init tooling.
         self.lora_A = nn.Linear(in_features, rank, bias=False)
         self.lora_B = nn.Linear(rank, out_features, bias=False)
         self.scaling = alpha / rank
@@ -57,7 +55,6 @@ def apply_lora(
 
     device = next(sam.parameters()).device
 
-    # Wrap each block's fused qkv (Linear 768 -> 2304) with LoRALinear.
     for block in sam.image_encoder.blocks:
         block.attn.qkv = LoRALinear(
             block.attn.qkv,
@@ -66,6 +63,5 @@ def apply_lora(
             dropout=dropout,
         ).to(device)
 
-    # Mask decoder fully trainable (small enough not to break param-efficiency).
     for p in sam.mask_decoder.parameters():
         p.requires_grad = True

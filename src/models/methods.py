@@ -1,4 +1,5 @@
 """Adaptation method dispatcher: routes a method name to its apply_* function and reports parameter counts."""
+
 from __future__ import annotations
 
 from segment_anything.modeling import Sam
@@ -24,6 +25,7 @@ def setup_method(sam: Sam, method: str, **kwargs) -> dict:
     elif method == "lora":
         # Lazy import to keep startup light for non-LoRA runs.
         from .lora import apply_lora
+
         apply_lora(sam, **kwargs)
     else:
         raise ValueError(

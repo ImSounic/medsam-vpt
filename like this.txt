@@ -1,0 +1,33 @@
+liek this <div align="center">
+<h1>Geo-Trokens: Geometry-aware Trajectory Tokens for Few-Shot Action Recognition</h1>
+
+**Zhiqi Miao***<sup>3</sup> · **Marko Haralović***<sup>1,2</sup> ·  **Stanislav Levendeev**<sup>1</sup> · **Sarvesh Angadi**<sup>1</sup> · **Dan Ploeșteanu**<sup>1</sup> · **Jannatul Ferdous**<sup>1</sup> · **Estefania Talavera Martinez**<sup>1</sup>
+
+<sup>1</sup>University of Twente&emsp;&emsp;<sup>2</sup>University of Zagreb&emsp;&emsp;<sup>3</sup>University of Groningen <br>
+<sup>*Equal contribution</sup>
+</div>
+
+but with these atuthirs \author{
+Marko Haralović\inst{1,2}\thanks{Equal contribution.} \and
+Sounic Akkaraju\inst{1}\thanks{Equal contribution.} \and
+Carlo Baretta\inst{1} \and
+Vasil Zapryanov\inst{1} \and
+Alexia Briasouli\inst{1}
+}
+
+\authorrunning{S. Akkaraju and M. Haralović et al.}
+
+\institute{
+University of Twente, Enschede, The Netherlands
+\and
+University of Zagreb, Zagreb, Croatia\\
+\email{
+\{s.akkaraju,c.d.a.baretta,v.z.zapryanov\}@student.utwente.nl;
+marko.haralovic@fer.hr;
+a.briassouli@utwente.nl
+}
+} 
+and with this title When Adaptation Hurts: Connecting Representational Drift to OOD Failures in MedSAM Fine-Tuning. 
+
+
+add table with link to checkpoint used as well

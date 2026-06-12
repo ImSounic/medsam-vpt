@@ -1,4 +1,5 @@
 """PH2 dermoscopy near-OOD test set (same modality as ISIC, different acquisition); loader pairs IMD###_Dermoscopic_Image with IMD###_lesion masks."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -65,13 +66,11 @@ class PH2(Dataset):
         return items
 
     @staticmethod
-    def _find_mask(
-        msk_dir: Path, image_stem: str, valid_exts: set[str]
-    ) -> Path | None:
+    def _find_mask(msk_dir: Path, image_stem: str, valid_exts: set[str]) -> Path | None:
         """Try mask filename conventions, in order."""
         candidate_stems = (
             image_stem,
-            f"{image_stem}_lesion",     # PH2 standard
+            f"{image_stem}_lesion",  # PH2 standard
             f"{image_stem}_mask",
             f"{image_stem}_segmentation",
         )

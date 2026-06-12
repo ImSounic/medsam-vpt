@@ -1,4 +1,5 @@
 """Evaluation entry point for zero-shot or any trained checkpoint (method auto-detected)."""
+
 from __future__ import annotations
 
 import argparse
@@ -213,12 +214,14 @@ def evaluate(cfg: dict, args: argparse.Namespace) -> int:
                 i_ = iou_score(pj, gj)
                 h_ = hd95(pj, gj)
                 per_image.append({"dice": d, "iou": i_, "hd95": h_})
-                per_image_rows.append({
-                    "image_id": batch["image_id"][j],
-                    "dice": d,
-                    "iou": i_,
-                    "hd95": h_,
-                })
+                per_image_rows.append(
+                    {
+                        "image_id": batch["image_id"][j],
+                        "dice": d,
+                        "iou": i_,
+                        "hd95": h_,
+                    }
+                )
         elapsed = time.time() - t0
 
         agg = aggregate_metrics(per_image)
@@ -229,29 +232,29 @@ def evaluate(cfg: dict, args: argparse.Namespace) -> int:
             f"n={len(per_image)} time={elapsed:.1f}s peak={peak_mb:.0f}MB"
         )
 
-        rows_for_csv.append({
-            "run_name": run_name,
-            "method": method,
-            "dataset": ds_name,
-            "seed": seed,
-            "dice_mean": f"{agg['dice_mean']:.4f}",
-            "dice_std": f"{agg['dice_std']:.4f}",
-            "iou_mean": f"{agg['iou_mean']:.4f}",
-            "hd95_mean": f"{agg['hd95_mean']:.4f}",
-            "trainable_params": info["trainable"],
-            "peak_mem_mb": f"{peak_mb:.0f}",
-            "wall_clock_s": f"{elapsed:.1f}",
-            "timestamp": datetime.now().isoformat(timespec="seconds"),
-            "notes": "quick" if args.quick else "",
-        })
+        rows_for_csv.append(
+            {
+                "run_name": run_name,
+                "method": method,
+                "dataset": ds_name,
+                "seed": seed,
+                "dice_mean": f"{agg['dice_mean']:.4f}",
+                "dice_std": f"{agg['dice_std']:.4f}",
+                "iou_mean": f"{agg['iou_mean']:.4f}",
+                "hd95_mean": f"{agg['hd95_mean']:.4f}",
+                "trainable_params": info["trainable"],
+                "peak_mem_mb": f"{peak_mb:.0f}",
+                "wall_clock_s": f"{elapsed:.1f}",
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "notes": "quick" if args.quick else "",
+            }
+        )
 
         # Per-image CSV (one per dataset)
         per_image_path = REPO_ROOT / cfg["output"].get(
             "per_image_csv", "results/raw/per_image.csv"
         )
-        per_image_path = per_image_path.with_name(
-            f"{run_name}_{ds_name}_per_image.csv"
-        )
+        per_image_path = per_image_path.with_name(f"{run_name}_{ds_name}_per_image.csv")
         per_image_path.parent.mkdir(parents=True, exist_ok=True)
         with open(per_image_path, "w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=["image_id", "dice", "iou", "hd95"])

@@ -1,4 +1,5 @@
 """CBIS-DDSM mammography far-OOD test set; mask PatientID has a trailing abnormality index that the full-mammogram PID drops, and multiple masks per mammogram are OR'd into one lesion mask."""
+
 from __future__ import annotations
 
 import csv
@@ -38,7 +39,7 @@ class CBISDDSM(Dataset):
 
         # Use stdlib csv, not pandas: pandas + PyTorch on Windows can hit an OpenMP DLL conflict that silently kills the process.
         split_tag = "-Test_" if split == "test" else "-Training_"
-        fulls: list[tuple[str, str]] = []   # (PatientID, image_path)
+        fulls: list[tuple[str, str]] = []  # (PatientID, image_path)
         masks_rows: list[tuple[str, str]] = []
         with open(dinfo_path, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
@@ -87,7 +88,7 @@ class CBISDDSM(Dataset):
         # Strip prefixes used by different Kaggle redistributions.
         for prefix in ("CBIS-DDSM/", "cbis-ddsm/"):
             if s.startswith(prefix):
-                s = s[len(prefix):]
+                s = s[len(prefix) :]
                 break
         return self.root / s
 
@@ -106,9 +107,7 @@ class CBISDDSM(Dataset):
             m = np.array(Image.open(mp).convert("L"))
             # Some masks differ slightly in size; resize to match the image.
             if m.shape != (orig_h, orig_w):
-                m = np.array(
-                    Image.fromarray(m).resize((orig_w, orig_h), Image.NEAREST)
-                )
+                m = np.array(Image.fromarray(m).resize((orig_w, orig_h), Image.NEAREST))
             combined |= m > 127
 
         img_pil = img_pil.resize((self.image_size, self.image_size), Image.BILINEAR)

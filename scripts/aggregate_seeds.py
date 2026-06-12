@@ -1,4 +1,5 @@
 """Aggregate multi-seed eval results into mean +/- std across seeds 0, 1, 2."""
+
 from __future__ import annotations
 
 import csv
@@ -40,26 +41,26 @@ DATASETS = ["isic2018_test", "ph2", "busi", "cbis_ddsm"]
 PERTURBS = [0, 20, 50, 100, 200]
 
 METHOD_LABELS = {
-    "zero_shot":    "Zero-shot",
+    "zero_shot": "Zero-shot",
     "decoder_only": "Decoder-only",
-    "vpt_shallow":  "VPT-shallow",
-    "vpt_deep":     "VPT-deep",
-    "lora":         "LoRA",
-    "full_ft":      "Full FT",
+    "vpt_shallow": "VPT-shallow",
+    "vpt_deep": "VPT-deep",
+    "lora": "LoRA",
+    "full_ft": "Full FT",
 }
 DATASET_LABELS = {
     "isic2018_test": "ISIC 2018 (ID)",
-    "ph2":           "PH2 (near-OOD)",
-    "busi":          "BUSI (far-OOD ultrasound)",
-    "cbis_ddsm":     "CBIS-DDSM (far-OOD mammography)",
+    "ph2": "PH2 (near-OOD)",
+    "busi": "BUSI (far-OOD ultrasound)",
+    "cbis_ddsm": "CBIS-DDSM (far-OOD mammography)",
 }
 METHOD_COLORS = {
-    "zero_shot":    "#808080",
+    "zero_shot": "#808080",
     "decoder_only": "#1f77b4",
-    "vpt_shallow":  "#ff7f0e",
-    "vpt_deep":     "#d62728",
-    "lora":         "#9467bd",
-    "full_ft":      "#2ca02c",
+    "vpt_shallow": "#ff7f0e",
+    "vpt_deep": "#d62728",
+    "lora": "#9467bd",
+    "full_ft": "#2ca02c",
 }
 TRAINING_LINESTYLES = {"pm=0": "-", "pm=20": "--", "rand100": ":"}
 
@@ -75,28 +76,32 @@ def load_all_seeds() -> pd.DataFrame:
             if tight_path.exists():
                 tight_df = pd.read_csv(tight_path)
                 for _, r in tight_df.iterrows():
-                    rows.append({
-                        "seed": seed,
-                        "method": r["method"],
-                        "training": training,
-                        "dataset": r["dataset"],
-                        "perturb_max_px": 0,
-                        "dice_mean": float(r["dice_mean"]),
-                    })
+                    rows.append(
+                        {
+                            "seed": seed,
+                            "method": r["method"],
+                            "training": training,
+                            "dataset": r["dataset"],
+                            "perturb_max_px": 0,
+                            "dice_mean": float(r["dice_mean"]),
+                        }
+                    )
 
             # Bbox-robustness rows (perturb_max_px in 20, 50, 100, 200)
             bbox_path = bbox_csv_for_seed(seed, training)
             if bbox_path.exists():
                 bbox_df = pd.read_csv(bbox_path)
                 for _, r in bbox_df.iterrows():
-                    rows.append({
-                        "seed": seed,
-                        "method": r["method"],
-                        "training": training,
-                        "dataset": r["dataset"],
-                        "perturb_max_px": int(r["perturb_max_px"]),
-                        "dice_mean": float(r["dice_mean"]),
-                    })
+                    rows.append(
+                        {
+                            "seed": seed,
+                            "method": r["method"],
+                            "training": training,
+                            "dataset": r["dataset"],
+                            "perturb_max_px": int(r["perturb_max_px"]),
+                            "dice_mean": float(r["dice_mean"]),
+                        }
+                    )
 
     df = pd.DataFrame(rows)
     # zero_shot is identical across trainings (no checkpoint), so dedupe to one copy per (seed, dataset, perturb).
@@ -111,13 +116,13 @@ def aggregate_mean_std(df: pd.DataFrame) -> pd.DataFrame:
     """Mean + std across seeds per (method, training, dataset, perturb)."""
     agg = (
         df.groupby(["method", "training", "dataset", "perturb_max_px"])
-          .agg(
-              dice_mean_seeds=("dice_mean", "mean"),
-              dice_std_seeds=("dice_mean", "std"),
-              n_seeds=("seed", "nunique"),
-              seeds=("seed", lambda s: ",".join(map(str, sorted(s.unique())))),
-          )
-          .reset_index()
+        .agg(
+            dice_mean_seeds=("dice_mean", "mean"),
+            dice_std_seeds=("dice_mean", "std"),
+            n_seeds=("seed", "nunique"),
+            seeds=("seed", lambda s: ",".join(map(str, sorted(s.unique())))),
+        )
+        .reset_index()
     )
     # Single-seed cells have NaN std; set to 0.
     agg["dice_std_seeds"] = agg["dice_std_seeds"].fillna(0.0)
@@ -140,35 +145,65 @@ def write_summary_markdown(agg: pd.DataFrame, out_path: Path) -> None:
 
     for ds in DATASETS:
         lines.append(f"\n## {DATASET_LABELS.get(ds, ds)}\n")
-        lines.append("| Method | Training | Dice @ pm=0 (tight) | Dice @ pm=200 (extreme) | n_seeds |")
+        lines.append(
+            "| Method | Training | Dice @ pm=0 (tight) | Dice @ pm=200 (extreme) | n_seeds |"
+        )
         lines.append("|---|---|---:|---:|---:|")
         for m in METHODS:
             if m == "zero_shot":
-                tight = agg[(agg["method"] == m) & (agg["dataset"] == ds) & (agg["perturb_max_px"] == 0)]
-                extreme = agg[(agg["method"] == m) & (agg["dataset"] == ds) & (agg["perturb_max_px"] == 200)]
+                tight = agg[
+                    (agg["method"] == m)
+                    & (agg["dataset"] == ds)
+                    & (agg["perturb_max_px"] == 0)
+                ]
+                extreme = agg[
+                    (agg["method"] == m)
+                    & (agg["dataset"] == ds)
+                    & (agg["perturb_max_px"] == 200)
+                ]
                 if tight.empty:
                     continue
                 # zero_shot only has pm=0 training entries (same checkpoint reused)
                 r_t = tight.iloc[0]
                 r_e = extreme.iloc[0] if not extreme.empty else None
                 t_cell = f"{r_t['dice_mean_seeds']:.4f} +/- {r_t['dice_std_seeds']:.4f}"
-                e_cell = (f"{r_e['dice_mean_seeds']:.4f} +/- {r_e['dice_std_seeds']:.4f}"
-                          if r_e is not None else "-")
-                lines.append(f"| {METHOD_LABELS[m]} | - | {t_cell} | {e_cell} | {int(r_t['n_seeds'])} |")
+                e_cell = (
+                    f"{r_e['dice_mean_seeds']:.4f} +/- {r_e['dice_std_seeds']:.4f}"
+                    if r_e is not None
+                    else "-"
+                )
+                lines.append(
+                    f"| {METHOD_LABELS[m]} | - | {t_cell} | {e_cell} | {int(r_t['n_seeds'])} |"
+                )
             else:
                 for tr in TRAININGS:
-                    tight = agg[(agg["method"] == m) & (agg["training"] == tr) &
-                                (agg["dataset"] == ds) & (agg["perturb_max_px"] == 0)]
-                    extreme = agg[(agg["method"] == m) & (agg["training"] == tr) &
-                                  (agg["dataset"] == ds) & (agg["perturb_max_px"] == 200)]
+                    tight = agg[
+                        (agg["method"] == m)
+                        & (agg["training"] == tr)
+                        & (agg["dataset"] == ds)
+                        & (agg["perturb_max_px"] == 0)
+                    ]
+                    extreme = agg[
+                        (agg["method"] == m)
+                        & (agg["training"] == tr)
+                        & (agg["dataset"] == ds)
+                        & (agg["perturb_max_px"] == 200)
+                    ]
                     if tight.empty:
                         continue
                     r_t = tight.iloc[0]
                     r_e = extreme.iloc[0] if not extreme.empty else None
-                    t_cell = f"{r_t['dice_mean_seeds']:.4f} +/- {r_t['dice_std_seeds']:.4f}"
-                    e_cell = (f"{r_e['dice_mean_seeds']:.4f} +/- {r_e['dice_std_seeds']:.4f}"
-                              if r_e is not None else "-")
-                    lines.append(f"| {METHOD_LABELS[m]} | {tr} | {t_cell} | {e_cell} | {int(r_t['n_seeds'])} |")
+                    t_cell = (
+                        f"{r_t['dice_mean_seeds']:.4f} +/- {r_t['dice_std_seeds']:.4f}"
+                    )
+                    e_cell = (
+                        f"{r_e['dice_mean_seeds']:.4f} +/- {r_e['dice_std_seeds']:.4f}"
+                        if r_e is not None
+                        else "-"
+                    )
+                    lines.append(
+                        f"| {METHOD_LABELS[m]} | {tr} | {t_cell} | {e_cell} | {int(r_t['n_seeds'])} |"
+                    )
 
     with open(out_path, "w") as f:
         f.write("\n".join(lines))
@@ -183,28 +218,52 @@ def plot_curves_with_seed_bands(agg: pd.DataFrame, out_path: Path) -> None:
     for ax, ds in zip(axes_flat, DATASETS):
         for m in METHODS:
             if m == "zero_shot":
-                sub = agg[(agg["method"] == m) & (agg["dataset"] == ds)].sort_values("perturb_max_px")
+                sub = agg[(agg["method"] == m) & (agg["dataset"] == ds)].sort_values(
+                    "perturb_max_px"
+                )
                 if not sub.empty:
-                    ax.plot(sub["perturb_max_px"], sub["dice_mean_seeds"],
-                             marker="o", linewidth=2.5, color=METHOD_COLORS[m],
-                             label=METHOD_LABELS[m])
-                    ax.fill_between(sub["perturb_max_px"],
-                                     sub["dice_mean_seeds"] - sub["dice_std_seeds"],
-                                     sub["dice_mean_seeds"] + sub["dice_std_seeds"],
-                                     color=METHOD_COLORS[m], alpha=0.10)
+                    ax.plot(
+                        sub["perturb_max_px"],
+                        sub["dice_mean_seeds"],
+                        marker="o",
+                        linewidth=2.5,
+                        color=METHOD_COLORS[m],
+                        label=METHOD_LABELS[m],
+                    )
+                    ax.fill_between(
+                        sub["perturb_max_px"],
+                        sub["dice_mean_seeds"] - sub["dice_std_seeds"],
+                        sub["dice_mean_seeds"] + sub["dice_std_seeds"],
+                        color=METHOD_COLORS[m],
+                        alpha=0.10,
+                    )
                 continue
             for tr in TRAININGS:
-                sub = agg[(agg["method"] == m) & (agg["training"] == tr) & (agg["dataset"] == ds)].sort_values("perturb_max_px")
+                sub = agg[
+                    (agg["method"] == m)
+                    & (agg["training"] == tr)
+                    & (agg["dataset"] == ds)
+                ].sort_values("perturb_max_px")
                 if sub.empty:
                     continue
-                ax.plot(sub["perturb_max_px"], sub["dice_mean_seeds"],
-                         color=METHOD_COLORS[m],
-                         linestyle=TRAINING_LINESTYLES[tr], linewidth=1.6, marker="o", markersize=4,
-                         alpha=0.9, label="_nolegend_")
-                ax.fill_between(sub["perturb_max_px"],
-                                 sub["dice_mean_seeds"] - sub["dice_std_seeds"],
-                                 sub["dice_mean_seeds"] + sub["dice_std_seeds"],
-                                 color=METHOD_COLORS[m], alpha=0.10)
+                ax.plot(
+                    sub["perturb_max_px"],
+                    sub["dice_mean_seeds"],
+                    color=METHOD_COLORS[m],
+                    linestyle=TRAINING_LINESTYLES[tr],
+                    linewidth=1.6,
+                    marker="o",
+                    markersize=4,
+                    alpha=0.9,
+                    label="_nolegend_",
+                )
+                ax.fill_between(
+                    sub["perturb_max_px"],
+                    sub["dice_mean_seeds"] - sub["dice_std_seeds"],
+                    sub["dice_mean_seeds"] + sub["dice_std_seeds"],
+                    color=METHOD_COLORS[m],
+                    alpha=0.10,
+                )
         ax.set_title(DATASET_LABELS.get(ds, ds))
         ax.set_xlabel("Eval bbox max expansion (px)")
         ax.set_ylabel("Dice (mean +/- std across seeds)")
@@ -212,20 +271,39 @@ def plot_curves_with_seed_bands(agg: pd.DataFrame, out_path: Path) -> None:
         ax.set_xticks(PERTURBS)
 
     method_handles = [
-        plt.Line2D([], [], color=METHOD_COLORS[m], marker="o", linewidth=2, label=METHOD_LABELS[m])
+        plt.Line2D(
+            [],
+            [],
+            color=METHOD_COLORS[m],
+            marker="o",
+            linewidth=2,
+            label=METHOD_LABELS[m],
+        )
         for m in METHODS
     ]
     style_handles = [
-        plt.Line2D([], [], color="black", linewidth=2, linestyle="-", label="pm=0 train"),
-        plt.Line2D([], [], color="black", linewidth=2, linestyle="--", label="pm=20 train"),
-        plt.Line2D([], [], color="black", linewidth=2, linestyle=":", label="rand100 train"),
+        plt.Line2D(
+            [], [], color="black", linewidth=2, linestyle="-", label="pm=0 train"
+        ),
+        plt.Line2D(
+            [], [], color="black", linewidth=2, linestyle="--", label="pm=20 train"
+        ),
+        plt.Line2D(
+            [], [], color="black", linewidth=2, linestyle=":", label="rand100 train"
+        ),
     ]
-    fig.legend(handles=method_handles + style_handles,
-                loc="lower center", ncol=5, frameon=False,
-                bbox_to_anchor=(0.5, -0.04), fontsize=10)
+    fig.legend(
+        handles=method_handles + style_handles,
+        loc="lower center",
+        ncol=5,
+        frameon=False,
+        bbox_to_anchor=(0.5, -0.04),
+        fontsize=10,
+    )
     fig.suptitle(
         "Multi-seed curves with +/-std bands (n_seeds varies per cell, see summary CSV)",
-        fontsize=13, y=1.00,
+        fontsize=13,
+        y=1.00,
     )
     fig.tight_layout()
     fig.savefig(out_path, dpi=130, bbox_inches="tight")
@@ -237,16 +315,26 @@ def main() -> int:
     print("[agg-seeds] scanning for seed CSVs...")
     df = load_all_seeds()
     if df.empty:
-        print("[agg-seeds] No CSVs found. Have you trained and evaluated seed=1/seed=2 yet?")
+        print(
+            "[agg-seeds] No CSVs found. Have you trained and evaluated seed=1/seed=2 yet?"
+        )
         return 1
 
-    print(f"[agg-seeds] loaded {len(df)} raw rows across {df['seed'].nunique()} seed(s): {sorted(df['seed'].unique())}")
+    print(
+        f"[agg-seeds] loaded {len(df)} raw rows across {df['seed'].nunique()} seed(s): {sorted(df['seed'].unique())}"
+    )
     agg = aggregate_mean_std(df)
-    print(f"[agg-seeds] aggregated to {len(agg)} unique (method, training, dataset, perturb) cells")
+    print(
+        f"[agg-seeds] aggregated to {len(agg)} unique (method, training, dataset, perturb) cells"
+    )
 
     write_csv(agg, REPO_ROOT / "summary_full_multiseed.csv")
-    write_summary_markdown(agg, REPO_ROOT / "bbox_robustness" / "comparison" / "seed_summary_table.md")
-    plot_curves_with_seed_bands(agg, REPO_ROOT / "bbox_robustness" / "comparison" / "seed_error_bars.png")
+    write_summary_markdown(
+        agg, REPO_ROOT / "bbox_robustness" / "comparison" / "seed_summary_table.md"
+    )
+    plot_curves_with_seed_bands(
+        agg, REPO_ROOT / "bbox_robustness" / "comparison" / "seed_error_bars.png"
+    )
 
     # n_seeds per cell surfaces incomplete runs
     n_seeds_dist = agg["n_seeds"].value_counts().sort_index()

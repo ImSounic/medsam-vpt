@@ -1,11 +1,11 @@
-"""Differentiable linear CKA: CKA(X,Y) = ||X^T Y||_F^2 / (||X^T X||_F * ||Y^T Y||_F)."""
+"""Differentiable linear CKA."""
+
 from __future__ import annotations
 
 import torch
 
 
 def _center_columns(X: torch.Tensor) -> torch.Tensor:
-    """Subtract the per-column mean from X."""
     return X - X.mean(dim=0, keepdim=True)
 
 
@@ -24,19 +24,17 @@ def linear_cka(X: torch.Tensor, Y: torch.Tensor, eps: float = 1e-8) -> torch.Ten
     Xc = _center_columns(X)
     Yc = _center_columns(Y)
 
-    # Pick the cheaper route: (n,n) Gram when d > n, else (d,d) feature-product.
     n = X.shape[0]
     if max(Xc.shape[1], Yc.shape[1]) > n:
-        # (n, n) Gram route: CKA = trace(Kx Ky) / sqrt(trace(Kx Kx) trace(Ky Ky))
-        Kx = Xc @ Xc.T          # (n, n)
-        Ky = Yc @ Yc.T          # (n, n)
+        # (n, n)
+        Kx = Xc @ Xc.T  # (n, n)
+        Ky = Yc @ Yc.T  # (n, n)
         num = (Kx * Ky).sum()
         denom = torch.sqrt((Kx * Kx).sum() * (Ky * Ky).sum())
     else:
-        # (d_X, d_Y) feature-product route (cheaper when d < n).
-        XtY = Xc.T @ Yc         # (d_X, d_Y)
-        XtX = Xc.T @ Xc         # (d_X, d_X)
-        YtY = Yc.T @ Yc         # (d_Y, d_Y)
+        XtY = Xc.T @ Yc  # (d_X, d_Y)
+        XtX = Xc.T @ Xc  # (d_X, d_X)
+        YtY = Yc.T @ Yc  # (d_Y, d_Y)
         num = (XtY * XtY).sum()
         denom = torch.sqrt((XtX * XtX).sum() * (YtY * YtY).sum())
 
@@ -44,7 +42,6 @@ def linear_cka(X: torch.Tensor, Y: torch.Tensor, eps: float = 1e-8) -> torch.Ten
 
 
 def flatten_for_cka(activation: torch.Tensor) -> torch.Tensor:
-    """Flatten a (B, ...) hook activation to (B, D); layout is irrelevant for linear CKA."""
     if activation.dim() < 2:
         raise ValueError(
             f"flatten_for_cka: activation must have batch dim. Got shape "

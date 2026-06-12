@@ -1,4 +1,5 @@
-"""Visual Prompt Tuning for MedSAM ViT-B: adds learnable vectors at fixed spatial positions (additive perturbation, not token prepending, due to SAM window attention)."""
+"""Visual Prompt Tuning for MedSAM ViT-B: adds learnable vectors at fixed spatial positions."""
+
 from __future__ import annotations
 
 import torch
@@ -49,14 +50,13 @@ class VPTSAMEncoder(nn.Module):
         B, H, W, C = x.shape
         N = prompts.shape[0]
         x_flat = x.reshape(B, H * W, C)
-        # Add via a zero tensor instead of in-place index assignment to keep the autograd graph clean.
+
         pert = torch.zeros_like(x_flat)
         pert[:, :N, :] = prompts.unsqueeze(0).expand(B, -1, -1)
         x_flat = x_flat + pert
         return x_flat.reshape(B, H, W, C)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Patch embed + pos embed (frozen).
         x = self.base.patch_embed(x)
         if self.base.pos_embed is not None:
             x = x + self.base.pos_embed
@@ -68,7 +68,6 @@ class VPTSAMEncoder(nn.Module):
             if self.mode == "deep":
                 x = self._add_prompts(x, self.layer_prompts[i])
             if self.gradient_checkpointing and self.training:
-                # Recompute block activations in backward instead of caching (~50% less memory, ~30% slower).
                 x = cp.checkpoint(blk, x, use_reentrant=False)
             else:
                 x = blk(x)
@@ -84,7 +83,6 @@ def apply_vpt(
     gradient_checkpointing: bool = False,
     **_kwargs,
 ) -> None:
-    """Configure SAM in place for VPT: wrap image_encoder in VPTSAMEncoder, train only prompts and mask decoder."""
     for p in sam.parameters():
         p.requires_grad = False
 
@@ -96,8 +94,5 @@ def apply_vpt(
         mode=mode,
         gradient_checkpointing=gradient_checkpointing,
     ).to(device)
-    # Prompts are nn.Parameter (requires_grad=True by default); base encoder frozen in __init__.
-
-    # Mask decoder trainable: turns prompt-modulated features into masks.
     for p in sam.mask_decoder.parameters():
         p.requires_grad = True

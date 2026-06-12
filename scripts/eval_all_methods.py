@@ -1,4 +1,5 @@
 """In-process orchestrator evaluating zero_shot + every trained checkpoint across all test sets in one process; zero_shot and decoder_only share one encoder pass, VPT/LoRA/full_ft fall back to a per-method loop."""
+
 from __future__ import annotations
 
 import argparse
@@ -19,7 +20,12 @@ from torch.utils.data import DataLoader  # noqa: E402
 from tqdm import tqdm  # noqa: E402
 
 from src.data.isic import isic_collate  # noqa: E402
-from src.device_utils import device_name, get_device, peak_memory_mb, reset_peak_memory  # noqa: E402
+from src.device_utils import (  # noqa: E402
+    device_name,
+    get_device,
+    peak_memory_mb,
+    reset_peak_memory,
+)
 from src.eval import build_dataset, predict_from_embeddings  # noqa: E402
 from src.metrics import aggregate_metrics, dice_score, hd95, iou_score  # noqa: E402
 from src.models.medsam import load_medsam_from_state_dict  # noqa: E402
@@ -37,16 +43,18 @@ def parse_args() -> argparse.Namespace:
         help="Glob (relative to repo root) for trained checkpoints to evaluate.",
     )
     p.add_argument(
-        "--quick", action="store_true",
+        "--quick",
+        action="store_true",
         help="Run on first 8 images per dataset (smoke-test mode).",
     )
     p.add_argument("--device", default=None, help="cuda | mps | cpu (default: auto)")
     p.add_argument(
         "--out-csv",
-        type=Path, default=None,
+        type=Path,
+        default=None,
         help="Override the results CSV path. Useful when evaluating a separate set of "
-             "checkpoints (e.g. pm=20 trained) without clobbering the baseline CSV. "
-             "Defaults to whatever the config's output.results_csv specifies.",
+        "checkpoints (e.g. pm=20 trained) without clobbering the baseline CSV. "
+        "Defaults to whatever the config's output.results_csv specifies.",
     )
     return p.parse_args()
 
@@ -105,8 +113,15 @@ def _save_per_image_csv(rows, run_name: str, ds_name: str, cfg: dict) -> Path:
 
 
 def _build_runs_row(
-    run_name: str, method: str, ds_name: str, seed: int,
-    agg: dict, param_info: dict, peak_mb: float, elapsed: float, args,
+    run_name: str,
+    method: str,
+    ds_name: str,
+    seed: int,
+    agg: dict,
+    param_info: dict,
+    peak_mb: float,
+    elapsed: float,
+    args,
 ) -> dict:
     return {
         "run_name": run_name,
@@ -131,7 +146,11 @@ def _metric_triple(pred, gt):
 
 # Group 1: zero_shot + decoder_only (shared encoder)
 def eval_shared_encoder_group(
-    cfg: dict, args, device: str, base_state_dict: dict, do_ckpt_path: Path,
+    cfg: dict,
+    args,
+    device: str,
+    base_state_dict: dict,
+    do_ckpt_path: Path,
 ) -> list[dict]:
     """Run zero_shot and decoder_only per dataset sharing one encoder pass, two decoders on the same embeddings."""
     print("\n[multi-eval] === GROUP: zero_shot + decoder_only (shared encoder) ===")
@@ -176,12 +195,16 @@ def eval_shared_encoder_group(
                 embeddings = sam_zs.image_encoder(images)
 
                 # Two decoders on the same embeddings
-                zs_preds = predict_from_embeddings(
-                    sam_zs, embeddings, bboxes, H, W
-                ).cpu().numpy()
-                do_preds = predict_from_embeddings(
-                    sam_do, embeddings, bboxes, H, W
-                ).cpu().numpy()
+                zs_preds = (
+                    predict_from_embeddings(sam_zs, embeddings, bboxes, H, W)
+                    .cpu()
+                    .numpy()
+                )
+                do_preds = (
+                    predict_from_embeddings(sam_do, embeddings, bboxes, H, W)
+                    .cpu()
+                    .numpy()
+                )
 
                 for j in range(zs_preds.shape[0]):
                     gj = masks_gt[j]
@@ -192,15 +215,27 @@ def eval_shared_encoder_group(
                     ):
                         d, i_, h_ = _metric_triple(preds_j, gj)
                         per_list.append({"dice": d, "iou": i_, "hd95": h_})
-                        row_list.append({
-                            "image_id": img_id, "dice": d, "iou": i_, "hd95": h_,
-                        })
+                        row_list.append(
+                            {
+                                "image_id": img_id,
+                                "dice": d,
+                                "iou": i_,
+                                "hd95": h_,
+                            }
+                        )
         elapsed = time.time() - t0
         peak_mb = peak_memory_mb(device)
 
         for per_image, per_rows, info, run_name, method, seed in (
             (zs_per, zs_rows, info_zs, "zero_shot", "zero_shot", 0),
-            (do_per, do_rows, info_do, do_info["run_name"], "decoder_only", do_info["seed"]),
+            (
+                do_per,
+                do_rows,
+                info_do,
+                do_info["run_name"],
+                "decoder_only",
+                do_info["seed"],
+            ),
         ):
             agg = aggregate_metrics(per_image)
             print(
@@ -209,10 +244,19 @@ def eval_shared_encoder_group(
                 f"iou={agg['iou_mean']:.4f} hd95={agg['hd95_mean']:.2f}px "
                 f"n={len(per_image)}"
             )
-            rows.append(_build_runs_row(
-                run_name, method, ds_name, seed,
-                agg, info, peak_mb, elapsed, args,
-            ))
+            rows.append(
+                _build_runs_row(
+                    run_name,
+                    method,
+                    ds_name,
+                    seed,
+                    agg,
+                    info,
+                    peak_mb,
+                    elapsed,
+                    args,
+                )
+            )
             csv_path = _save_per_image_csv(per_rows, run_name, ds_name, cfg)
             print(f"[multi-eval]   per-image -> {csv_path}")
         print(f"[multi-eval] {ds_name} group time: {elapsed:.1f}s peak={peak_mb:.0f}MB")
@@ -225,7 +269,11 @@ def eval_shared_encoder_group(
 
 # Groups 2+: per-method eval (VPT-shallow, VPT-deep, LoRA, full_ft)
 def eval_one_checkpoint(
-    cfg: dict, args, device: str, base_state_dict: dict, ckpt_path: Path,
+    cfg: dict,
+    args,
+    device: str,
+    base_state_dict: dict,
+    ckpt_path: Path,
 ) -> list[dict]:
     arch = cfg["model"]["arch"]
     image_size = cfg["model"]["image_size"]
@@ -260,17 +308,21 @@ def eval_one_checkpoint(
                 masks_gt = batch["mask"].cpu().numpy()
                 H, W = images.shape[-2:]
                 embeddings = sam.image_encoder(images)
-                preds = predict_from_embeddings(
-                    sam, embeddings, bboxes, H, W
-                ).cpu().numpy()
+                preds = (
+                    predict_from_embeddings(sam, embeddings, bboxes, H, W).cpu().numpy()
+                )
                 for j in range(preds.shape[0]):
                     pj, gj = preds[j], masks_gt[j]
                     d, i_, h_ = _metric_triple(pj, gj)
                     per_image.append({"dice": d, "iou": i_, "hd95": h_})
-                    per_rows.append({
-                        "image_id": batch["image_id"][j],
-                        "dice": d, "iou": i_, "hd95": h_,
-                    })
+                    per_rows.append(
+                        {
+                            "image_id": batch["image_id"][j],
+                            "dice": d,
+                            "iou": i_,
+                            "hd95": h_,
+                        }
+                    )
         elapsed = time.time() - t0
         peak_mb = peak_memory_mb(device)
         agg = aggregate_metrics(per_image)
@@ -279,10 +331,19 @@ def eval_one_checkpoint(
             f"iou={agg['iou_mean']:.4f} hd95={agg['hd95_mean']:.2f}px "
             f"n={len(per_image)} time={elapsed:.1f}s peak={peak_mb:.0f}MB"
         )
-        rows.append(_build_runs_row(
-            info["run_name"], info["method"], ds_name, info["seed"],
-            agg, param_info, peak_mb, elapsed, args,
-        ))
+        rows.append(
+            _build_runs_row(
+                info["run_name"],
+                info["method"],
+                ds_name,
+                info["seed"],
+                agg,
+                param_info,
+                peak_mb,
+                elapsed,
+                args,
+            )
+        )
         csv_path = _save_per_image_csv(per_rows, info["run_name"], ds_name, cfg)
         print(f"[multi-eval]   per-image -> {csv_path}")
 
@@ -315,22 +376,37 @@ def eval_zero_shot_only(cfg, args, device, base_state_dict):
                 masks_gt = batch["mask"].cpu().numpy()
                 H, W = images.shape[-2:]
                 embeddings = sam.image_encoder(images)
-                preds = predict_from_embeddings(sam, embeddings, bboxes, H, W).cpu().numpy()
+                preds = (
+                    predict_from_embeddings(sam, embeddings, bboxes, H, W).cpu().numpy()
+                )
                 for j in range(preds.shape[0]):
                     pj, gj = preds[j], masks_gt[j]
                     d, i_, h_ = _metric_triple(pj, gj)
                     per_image.append({"dice": d, "iou": i_, "hd95": h_})
-                    per_rows.append({
-                        "image_id": batch["image_id"][j],
-                        "dice": d, "iou": i_, "hd95": h_,
-                    })
+                    per_rows.append(
+                        {
+                            "image_id": batch["image_id"][j],
+                            "dice": d,
+                            "iou": i_,
+                            "hd95": h_,
+                        }
+                    )
         elapsed = time.time() - t0
         peak_mb = peak_memory_mb(device)
         agg = aggregate_metrics(per_image)
-        rows.append(_build_runs_row(
-            "zero_shot", "zero_shot", ds_name, 0,
-            agg, info, peak_mb, elapsed, args,
-        ))
+        rows.append(
+            _build_runs_row(
+                "zero_shot",
+                "zero_shot",
+                ds_name,
+                0,
+                agg,
+                info,
+                peak_mb,
+                elapsed,
+                args,
+            )
+        )
         _save_per_image_csv(per_rows, "zero_shot", ds_name, cfg)
     del sam
     if device == "cuda":
@@ -383,9 +459,15 @@ def main() -> int:
         None,
     )
     if do_ckpt is not None:
-        all_rows.extend(eval_shared_encoder_group(
-            cfg, args, device, base_state_dict, do_ckpt,
-        ))
+        all_rows.extend(
+            eval_shared_encoder_group(
+                cfg,
+                args,
+                device,
+                base_state_dict,
+                do_ckpt,
+            )
+        )
     else:
         print("[multi-eval] no decoder_only checkpoint, running zero_shot standalone")
         all_rows.extend(eval_zero_shot_only(cfg, args, device, base_state_dict))
@@ -394,13 +476,21 @@ def main() -> int:
     for ckpt in checkpoints:
         if "decoder_only" in ckpt.parent.name:
             continue  # handled in Group 1
-        all_rows.extend(eval_one_checkpoint(
-            cfg, args, device, base_state_dict, ckpt,
-        ))
+        all_rows.extend(
+            eval_one_checkpoint(
+                cfg,
+                args,
+                device,
+                base_state_dict,
+                ckpt,
+            )
+        )
 
     # --out-csv overrides the config's results_csv (keeps pm=0/pm=20 separate).
     if args.out_csv is not None:
-        runs_path = args.out_csv if args.out_csv.is_absolute() else REPO_ROOT / args.out_csv
+        runs_path = (
+            args.out_csv if args.out_csv.is_absolute() else REPO_ROOT / args.out_csv
+        )
     else:
         runs_path = REPO_ROOT / cfg["output"]["results_csv"]
     append_to_runs_csv(all_rows, runs_path)

@@ -1,4 +1,5 @@
 """Generate seed-1 and seed-2 training configs from the 15 seed-0 ones via text-mode rewrite of seed/name/checkpoint_dir."""
+
 from __future__ import annotations
 
 import re
@@ -10,23 +11,23 @@ CONFIGS_DIR = REPO_ROOT / "configs"
 # (source_config_name, perturb_suffix); suffix is "" for pm=0
 BASE_CONFIGS = [
     # pm=0 (no suffix in filename or run_name)
-    ("decoder_only.yaml",  ""),
-    ("vpt_shallow.yaml",   ""),
-    ("vpt_deep.yaml",      ""),
-    ("lora.yaml",          ""),
-    ("full_ft.yaml",       ""),
+    ("decoder_only.yaml", ""),
+    ("vpt_shallow.yaml", ""),
+    ("vpt_deep.yaml", ""),
+    ("lora.yaml", ""),
+    ("full_ft.yaml", ""),
     # pm=20 fixed jitter
     ("decoder_only_pm20.yaml", "_pm20"),
-    ("vpt_shallow_pm20.yaml",  "_pm20"),
-    ("vpt_deep_pm20.yaml",     "_pm20"),
-    ("lora_pm20.yaml",         "_pm20"),
-    ("full_ft_pm20.yaml",      "_pm20"),
+    ("vpt_shallow_pm20.yaml", "_pm20"),
+    ("vpt_deep_pm20.yaml", "_pm20"),
+    ("lora_pm20.yaml", "_pm20"),
+    ("full_ft_pm20.yaml", "_pm20"),
     # rand100 random jitter
     ("decoder_only_rand100.yaml", "_rand100"),
-    ("vpt_shallow_rand100.yaml",  "_rand100"),
-    ("vpt_deep_rand100.yaml",     "_rand100"),
-    ("lora_rand100.yaml",         "_rand100"),
-    ("full_ft_rand100.yaml",      "_rand100"),
+    ("vpt_shallow_rand100.yaml", "_rand100"),
+    ("vpt_deep_rand100.yaml", "_rand100"),
+    ("lora_rand100.yaml", "_rand100"),
+    ("full_ft_rand100.yaml", "_rand100"),
 ]
 
 EXTRA_SEEDS = [1, 2]
@@ -105,7 +106,9 @@ def main() -> int:
     print("\nNext steps:")
     print("  1. Commit + push the 30 new configs")
     print("  2. On JupyterLab: pull, then launch the 30 trainings (~32h)")
-    print("  3. After training: run evals with --checkpoint-glob 'checkpoints/runs_seedN*/*/best.pth'")
+    print(
+        "  3. After training: run evals with --checkpoint-glob 'checkpoints/runs_seedN*/*/best.pth'"
+    )
     print("  4. Aggregate across seeds with scripts/aggregate_seeds.py (TBD)")
     return 0
 

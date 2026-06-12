@@ -1,8 +1,7 @@
-"""Segmentation metrics (Dice, IoU, HD95) plus bootstrap CIs over 0/1 arrays/tensors."""
 from __future__ import annotations
 
-# Silence tensorflow noise from monai's import chain; env vars must precede the tf import.
 import os
+
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 
@@ -15,15 +14,17 @@ import numpy as np
 import torch
 
 _MONAI_GET_SURFACE = None
-with contextlib.redirect_stderr(io.StringIO()), \
-     contextlib.redirect_stdout(io.StringIO()), \
-     warnings.catch_warnings():
+with (
+    contextlib.redirect_stderr(io.StringIO()),
+    contextlib.redirect_stdout(io.StringIO()),
+    warnings.catch_warnings(),
+):
     warnings.simplefilter("ignore")
     try:
         from monai.metrics.utils import get_surface_distance as _monai_gsd
+
         _MONAI_GET_SURFACE = _monai_gsd
     except Exception:
-        # monai unavailable/broken here; hd95() falls back to scipy.
         _MONAI_GET_SURFACE = None
 
 
@@ -34,18 +35,16 @@ def _to_numpy(x) -> np.ndarray:
 
 
 def dice_score(pred, target, eps: float = 1e-6) -> float:
-    """Dice: 2|A and B| / (|A|+|B|). Scalar."""
     pred = _to_numpy(pred).astype(bool)
     target = _to_numpy(target).astype(bool)
     inter = np.logical_and(pred, target).sum()
     denom = pred.sum() + target.sum()
     if denom == 0:
-        return 1.0  # both empty counts as perfect
+        return 1.0
     return float((2.0 * inter + eps) / (denom + eps))
 
 
 def iou_score(pred, target, eps: float = 1e-6) -> float:
-    """Intersection-over-Union. Scalar."""
     pred = _to_numpy(pred).astype(bool)
     target = _to_numpy(target).astype(bool)
     inter = np.logical_and(pred, target).sum()
@@ -56,7 +55,6 @@ def iou_score(pred, target, eps: float = 1e-6) -> float:
 
 
 def hd95(pred, target) -> float:
-    """95th-percentile Hausdorff distance in pixels; inf if either mask is empty."""
     pred = _to_numpy(pred).astype(bool)
     target = _to_numpy(target).astype(bool)
 
@@ -65,7 +63,6 @@ def hd95(pred, target) -> float:
 
     if _MONAI_GET_SURFACE is not None:
         try:
-            # symmetric 95th-percentile
             d1 = _MONAI_GET_SURFACE(pred, target, distance_metric="euclidean")
             d2 = _MONAI_GET_SURFACE(target, pred, distance_metric="euclidean")
             d = np.concatenate([d1, d2])
@@ -73,15 +70,13 @@ def hd95(pred, target) -> float:
                 return 0.0
             return float(np.percentile(d, 95))
         except Exception:
-            pass  # fall through to scipy
+            pass
 
-    # scipy fallback
     from scipy.ndimage import distance_transform_edt
 
     target_dt = distance_transform_edt(~target)
     pred_dt = distance_transform_edt(~pred)
 
-    # Boundary-only would be more correct; for a fallback we use full-mask DTs
     d_pred_to_target = target_dt[pred]
     d_target_to_pred = pred_dt[target]
     d_all = np.concatenate([d_pred_to_target, d_target_to_pred])
@@ -91,14 +86,12 @@ def hd95(pred, target) -> float:
 
 
 def aggregate_metrics(per_image: list[dict]) -> dict:
-    """Aggregate per-image metric dicts into mean, std, and bootstrap CI."""
     if not per_image:
         return {}
 
     out = {}
     for key in per_image[0]:
         vals = np.array([d[key] for d in per_image], dtype=np.float64)
-        # Replace inf HD95 (empty masks) with finite max for aggregation
         if np.any(np.isinf(vals)):
             finite = vals[np.isfinite(vals)]
             replacement = finite.max() if len(finite) else 0.0

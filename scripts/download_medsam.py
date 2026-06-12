@@ -1,4 +1,5 @@
 """Download the MedSAM ViT-B segment_anything-format .pth (~358 MB) from Zenodo into checkpoints/medsam_vit_b.pth."""
+
 from __future__ import annotations
 
 import sys
@@ -33,10 +34,16 @@ def main() -> int:
     with requests.get(URL, stream=True, timeout=60) as response:
         response.raise_for_status()
         total = int(response.headers.get("content-length", 0))
-        with open(TARGET, "wb") as f, tqdm(
-            total=total, unit="B", unit_scale=True, unit_divisor=1024,
-            desc="medsam_vit_b.pth"
-        ) as bar:
+        with (
+            open(TARGET, "wb") as f,
+            tqdm(
+                total=total,
+                unit="B",
+                unit_scale=True,
+                unit_divisor=1024,
+                desc="medsam_vit_b.pth",
+            ) as bar,
+        ):
             for chunk in response.iter_content(chunk_size=1 << 20):  # 1 MB chunks
                 if chunk:
                     f.write(chunk)
@@ -46,8 +53,10 @@ def main() -> int:
     print(f"[done] saved {TARGET} ({size_mb:.1f} MB)")
 
     if size_mb < 100:
-        print(f"[warn] file is only {size_mb:.1f} MB; that's too small. "
-              "Check the URL and try again.")
+        print(
+            f"[warn] file is only {size_mb:.1f} MB; that's too small. "
+            "Check the URL and try again."
+        )
         return 1
     return 0
 

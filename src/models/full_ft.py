@@ -1,12 +1,11 @@
 """Full fine-tuning: image encoder + mask decoder trainable, prompt encoder frozen."""
+
 from __future__ import annotations
 
 from segment_anything.modeling import Sam
 
 
 def apply_full_ft(sam: Sam, **_kwargs) -> None:
-    """Configure SAM in place for full fine-tuning."""
-    # Freeze first, then unfreeze what we train.
     for p in sam.parameters():
         p.requires_grad = False
     for p in sam.image_encoder.parameters():

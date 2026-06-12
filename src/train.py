@@ -1,4 +1,5 @@
 """Method-agnostic training entry point; checkpoints store only trainable params."""
+
 from __future__ import annotations
 
 import argparse
@@ -38,7 +39,6 @@ from src.models.methods import encoder_in_grad_path, setup_method
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# torch.autocast device_type, set by main() once the device is picked (required even when disabled).
 _AUTOCAST_DEVICE = "cuda"
 
 
@@ -92,7 +92,6 @@ def forward_with_prompt(
             dense_prompt_embeddings=dense,
             multimask_output=False,
         )
-        # Upsample low-res (256x256) to image size (HxW) for loss/metric.
         masks_out.append(
             F.interpolate(low_res, size=(H, W), mode="bilinear", align_corners=False)
         )
@@ -100,11 +99,17 @@ def forward_with_prompt(
 
 
 def train_one_epoch(
-    sam, loader, optimizer, scaler, criterion, device,
-    *, encoder_grad: bool, amp: bool,
+    sam,
+    loader,
+    optimizer,
+    scaler,
+    criterion,
+    device,
+    *,
+    encoder_grad: bool,
+    amp: bool,
     cka_ctx: dict | None = None,
 ) -> dict:
-    """Train one epoch; task and CKA backward run separately to halve peak memory."""
     sam.train()
     losses, bces, dlosses, cka_losses = [], [], [], []
     per_layer_cka_history: dict[str, list[float]] = (
@@ -119,7 +124,6 @@ def train_one_epoch(
 
         optimizer.zero_grad(set_to_none=True)
 
-        # Task: forward + backward (frees train graph)
         with torch.autocast(device_type=_AUTOCAST_DEVICE, enabled=amp):
             logits = forward_with_prompt(sam, images, bboxes, encoder_grad=encoder_grad)
             task_loss, parts = criterion(logits, masks)
@@ -129,26 +133,24 @@ def train_one_epoch(
             scaler.scale(task_loss).backward()
         else:
             task_loss.backward()
-        # Drop refs so train graph is reclaimed before probe forward
         del logits, task_loss
 
-        # CKA forward+backward applied every N steps; scale lambda by N to match every-step gradient.
         cka_loss_val = 0.0
         do_cka_this_step = (cka_ctx is not None) and (step_idx % cka_every_n == 0)
         if do_cka_this_step:
             from cka.probe import run_current_probe_forward
+
             effective_lambda = float(cka_ctx["lambda_cka"]) * cka_every_n
-            # Probe forward in fp16 autocast (saves memory + time on encoder).
             with torch.autocast(device_type=_AUTOCAST_DEVICE, enabled=amp):
                 run_current_probe_forward(
-                    sam, cka_ctx["probe_batch"],
+                    sam,
+                    cka_ctx["probe_batch"],
                     hook_handle=cka_ctx["hook_handle"],
                     encoder_chunk=cka_ctx["encoder_chunk"],
                     use_grad_checkpoint=cka_ctx["use_grad_checkpoint"],
                 )
             cur_acts = cka_ctx["hook_handle"].stacked()
 
-            # CKA math in fp32 (autocast OFF): ||X^T X||_F^2 ~1e10 overflows fp16's 65504 max.
             with torch.autocast(device_type=_AUTOCAST_DEVICE, enabled=False):
                 per_layer_losses = []
                 for name, base_act in cka_ctx["base_acts"].items():
@@ -174,13 +176,11 @@ def train_one_epoch(
                 else:
                     scaled_cka.backward()
 
-            # Free accumulated hook tensors; orphaned after backward.
             cka_ctx["hook_handle"].clear()
             del cur_acts
             if scaled_cka is not None:
                 del cka_loss, scaled_cka
 
-        # Optimizer step (sees grads from both backwards)
         if scaler is not None:
             scaler.step(optimizer)
             scaler.update()
@@ -188,13 +188,14 @@ def train_one_epoch(
             optimizer.step()
 
         total_loss_val = task_loss_val + (
-            float(cka_ctx["lambda_cka"]) * cka_loss_val if (cka_ctx and do_cka_this_step) else 0.0
+            float(cka_ctx["lambda_cka"]) * cka_loss_val
+            if (cka_ctx and do_cka_this_step)
+            else 0.0
         )
         losses.append(total_loss_val)
         bces.append(parts["bce"])
         dlosses.append(parts["dice_loss"])
         if cka_ctx is not None:
-            # record CKA only on steps where it was computed
             if do_cka_this_step:
                 cka_losses.append(cka_loss_val)
         postfix = {
@@ -230,10 +231,12 @@ def validate(sam, loader, device, *, amp: bool) -> dict:
             logits = forward_with_prompt(sam, images, bboxes, encoder_grad=False)
         preds = (logits.squeeze(1) > 0).cpu().numpy().astype("uint8")
         for j in range(preds.shape[0]):
-            per_image.append({
-                "dice": dice_score(preds[j], masks_gt[j]),
-                "iou": iou_score(preds[j], masks_gt[j]),
-            })
+            per_image.append(
+                {
+                    "dice": dice_score(preds[j], masks_gt[j]),
+                    "iou": iou_score(preds[j], masks_gt[j]),
+                }
+            )
     agg = aggregate_metrics(per_image)
     return agg
 
@@ -278,7 +281,6 @@ def main() -> int:
     seed = args.seed if args.seed is not None else cfg.get("seed", 0)
     set_seed(seed)
 
-    # cudnn.benchmark + TF32 speed up fixed-shape (1024x1024) training; no-ops on CPU/MPS.
     if torch.cuda.is_available():
         torch.backends.cudnn.benchmark = True
         torch.backends.cuda.matmul.allow_tf32 = True
@@ -286,9 +288,10 @@ def main() -> int:
 
     device = get_device()  # cuda > mps > cpu
     method = cfg["method"]
-    print(f"[train] device={device} ({device_name(device)}) method={method} seed={seed}")
+    print(
+        f"[train] device={device} ({device_name(device)}) method={method} seed={seed}"
+    )
 
-    # Bind the autocast device_type once into the module-level constant read elsewhere.
     global _AUTOCAST_DEVICE
     _AUTOCAST_DEVICE = autocast_device_type(device)
 
@@ -319,9 +322,10 @@ def main() -> int:
         image_size=image_size,
         bbox_perturb_pixels=0,
     )
-    print(f"[train] train_n={len(train_ds)} val_n={len(val_ds)} image_size={image_size}")
+    print(
+        f"[train] train_n={len(train_ds)} val_n={len(val_ds)} image_size={image_size}"
+    )
 
-    # persistent_workers + prefetch_factor=4 keep the GPU fed; both illegal with workers=0.
     train_nw = cfg["train"].get("num_workers", 8)
     eval_nw = cfg["eval"].get("num_workers", 8)
     train_extra = (
@@ -382,54 +386,69 @@ def main() -> int:
         n_cbis = int(cka_cfg.get("n_cbis", 10))
 
         print(f"[train][cka] enabled  lambda={lambda_cka}  layers={layer_names}")
-        print(f"[train][cka] probe: ISIC={n_isic} BUSI={n_busi} CBIS={n_cbis} "
-              f"seed={probe_seed}")
+        print(
+            f"[train][cka] probe: ISIC={n_isic} BUSI={n_busi} CBIS={n_cbis} "
+            f"seed={probe_seed}"
+        )
 
-        # Build probe batch on the right device
         probe_batch = build_probe_batch(
             repo_root=REPO_ROOT,
             image_size=image_size,
-            n_isic=n_isic, n_busi=n_busi, n_cbis=n_cbis,
+            n_isic=n_isic,
+            n_busi=n_busi,
+            n_cbis=n_cbis,
             probe_seed=probe_seed,
             device=device,
         )
         print(f"[train][cka] probe batch built: {probe_batch['image'].shape}")
 
-        # Cache base MedSAM activations on the probe (one-time, no grad)
-        base_for_probe = load_medsam(ckpt_path, arch=cfg["model"]["arch"], device=device)
+        base_for_probe = load_medsam(
+            ckpt_path, arch=cfg["model"]["arch"], device=device
+        )
         for p in base_for_probe.parameters():
             p.requires_grad = False
         base_acts = cache_base_activations(base_for_probe, probe_batch, layer_names)
-        print(f"[train][cka] base activations cached: "
-              f"{ {n: tuple(a.shape) for n, a in base_acts.items()} }")
+        print(
+            f"[train][cka] base activations cached: "
+            f"{ {n: tuple(a.shape) for n, a in base_acts.items()} }"
+        )
         del base_for_probe  # only needed for one forward
         empty_cache(device)
 
-        # Accumulate mode: decoder hooks fire once per probe sample, so stack don't overwrite.
         hook_handle = register_hooks(sam, layer_names, detach=False, accumulate=True)
 
         cka_ctx = {
-            "probe_batch":   probe_batch,
-            "base_acts":     base_acts,
-            "hook_handle":   hook_handle,
-            "lambda_cka":    lambda_cka,
+            "probe_batch": probe_batch,
+            "base_acts": base_acts,
+            "hook_handle": hook_handle,
+            "lambda_cka": lambda_cka,
             "layer_weights": layer_weights,
             "encoder_chunk": int(cka_cfg.get("encoder_chunk", 16)),
             "use_grad_checkpoint": bool(cka_cfg.get("use_grad_checkpoint", True)),
             "every_n_steps": int(cka_cfg.get("every_n_steps", 1)),
         }
 
-    # Output paths
     run_name = cfg["name"]
     run_dir = REPO_ROOT / cfg["output"]["checkpoint_dir"] / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
     log_path = run_dir / "train_log.csv"
-    # Append on resume to keep previous epoch records
-    log_mode = "a" if (args.resume and log_path.exists() and log_path.stat().st_size > 0) else "w"
+    log_mode = (
+        "a"
+        if (args.resume and log_path.exists() and log_path.stat().st_size > 0)
+        else "w"
+    )
     log_fh = open(log_path, log_mode, newline="")
     log_w = csv.writer(log_fh)
-    log_header = ["epoch", "train_loss", "train_bce", "train_dice_loss",
-                  "val_dice", "val_iou", "lr", "epoch_s"]
+    log_header = [
+        "epoch",
+        "train_loss",
+        "train_bce",
+        "train_dice_loss",
+        "val_dice",
+        "val_iou",
+        "lr",
+        "epoch_s",
+    ]
     if cka_ctx is not None:
         log_header.append("cka_loss")
         for name in cka_ctx["base_acts"]:
@@ -444,13 +463,10 @@ def main() -> int:
     latest_path = run_dir / "latest.pth"
     if args.resume and latest_path.exists():
         ckpt = torch.load(latest_path, map_location="cpu", weights_only=False)
-        # Restore trainable params
         trainable_state = {k: v.to(device) for k, v in ckpt["trainable_state"].items()}
         sam.load_state_dict(trainable_state, strict=False)
-        # Restore optimizer state (Adam moments; scheduler sets the LR)
         if "optimizer" in ckpt:
             optimizer.load_state_dict(ckpt["optimizer"])
-        # Step a fresh scheduler completed_epochs times instead of loading saved state, whose T_max would override current `epochs`.
         completed_epochs = int(ckpt["epoch"])
         for _ in range(completed_epochs):
             scheduler.step()
@@ -468,15 +484,22 @@ def main() -> int:
     for epoch in range(start_epoch, epochs + 1):
         t0 = time.time()
         train_stats = train_one_epoch(
-            sam, train_loader, optimizer, scaler, criterion, device,
-            encoder_grad=enc_grad, amp=amp, cka_ctx=cka_ctx,
+            sam,
+            train_loader,
+            optimizer,
+            scaler,
+            criterion,
+            device,
+            encoder_grad=enc_grad,
+            amp=amp,
+            cka_ctx=cka_ctx,
         )
-        # Thermal cooldown between train and val to avoid driver crashes on hot mobile GPUs.
         if cooldown_s > 0:
             print(f"[train] cooldown {cooldown_s:.0f}s before val")
             synchronize(device)
             empty_cache(device)
             import gc
+
             gc.collect()
             time.sleep(cooldown_s)
         val_stats = validate(sam, val_loader, device, amp=amp)
@@ -509,7 +532,6 @@ def main() -> int:
         log_w.writerow(row)
         log_fh.flush()
 
-        # Save latest every epoch (with optimizer/scheduler for resume); best on improvement
         if val_dice > best_val:
             best_val = val_dice
             save_checkpoint(
@@ -517,8 +539,14 @@ def main() -> int:
             )
             print(f"[train]   new best val_dice={best_val:.4f}")
         save_checkpoint(
-            sam, run_dir / "latest.pth", epoch, val_dice, cfg,
-            optimizer=optimizer, scheduler=scheduler, best_val=best_val,
+            sam,
+            run_dir / "latest.pth",
+            epoch,
+            val_dice,
+            cfg,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            best_val=best_val,
         )
 
     log_fh.close()
@@ -526,7 +554,9 @@ def main() -> int:
         cka_ctx["hook_handle"].remove()
     total_min = (time.time() - t_total) / 60
     peak_mb = peak_memory_mb(device)
-    print(f"[train] done in {total_min:.1f} min. best val_dice={best_val:.4f} peak={peak_mb:.0f}MB")
+    print(
+        f"[train] done in {total_min:.1f} min. best val_dice={best_val:.4f} peak={peak_mb:.0f}MB"
+    )
     print(f"[train] best checkpoint -> {run_dir / 'best.pth'}")
     return 0
 

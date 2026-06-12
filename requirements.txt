@@ -31,3 +31,7 @@ huggingface_hub
 
 # Stats
 scipy
+
+# Formatting
+black
+isort
