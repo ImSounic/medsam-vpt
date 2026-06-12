@@ -1,12 +1,24 @@
-"""LoRA fine-tuning for MedSAM: one rank-r adapter wraps the fused qkv (shared across Q/K/V), no peft lib."""
+"""LoRA fine-tuning for MedSAM, with support for encoder-only variants."""
 
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 
 import torch
 import torch.nn as nn
 from segment_anything.modeling import Sam
+
+_BLOCK_LINEAR_TARGETS = {
+    "qkv": "attn.qkv",
+    "proj": "attn.proj",
+    "mlp_lin1": "mlp.lin1",
+    "mlp_lin2": "mlp.lin2",
+}
+_TARGET_PRESETS = {
+    "qkv": ("qkv",),
+    "all": ("qkv", "proj", "mlp_lin1", "mlp_lin2"),
+}
 
 
 class LoRALinear(nn.Module):
@@ -47,21 +59,52 @@ def apply_lora(
     rank: int = 8,
     alpha: int = 16,
     dropout: float = 0.0,
+    train_mask_decoder: bool = True,
+    target_modules: str | Iterable[str] = "qkv",
     **_kwargs,
 ) -> None:
-    """Configure SAM for LoRA in place: wrap encoder qkv with LoRALinear, freeze prompt encoder, train mask decoder."""
+    """Configure SAM for LoRA in place.
+
+    By default this matches the original setup: LoRA on encoder qkv and a
+    trainable mask decoder. Encoder-only LoRA uses `train_mask_decoder=False`
+    and `target_modules=all`.
+    """
     for p in sam.parameters():
         p.requires_grad = False
 
     device = next(sam.parameters()).device
 
-    for block in sam.image_encoder.blocks:
-        block.attn.qkv = LoRALinear(
-            block.attn.qkv,
-            rank=rank,
-            alpha=alpha,
-            dropout=dropout,
-        ).to(device)
+    if isinstance(target_modules, str):
+        selected = _TARGET_PRESETS.get(target_modules, (target_modules,))
+    else:
+        selected = tuple(target_modules)
 
-    for p in sam.mask_decoder.parameters():
-        p.requires_grad = True
+    invalid = [name for name in selected if name not in _BLOCK_LINEAR_TARGETS]
+    if invalid:
+        valid = ", ".join(sorted(_BLOCK_LINEAR_TARGETS))
+        raise ValueError(
+            f"Unknown LoRA target_modules: {invalid}. Valid names: {valid}."
+        )
+
+    def _replace_linear(root: nn.Module, dotted_name: str) -> None:
+        parts = dotted_name.split(".")
+        parent = root
+        for part in parts[:-1]:
+            parent = getattr(parent, part)
+        leaf = parts[-1]
+        base = getattr(parent, leaf)
+        if not isinstance(base, nn.Linear):
+            raise TypeError(f"Expected nn.Linear at {dotted_name}, found {type(base)}")
+        setattr(
+            parent,
+            leaf,
+            LoRALinear(base, rank=rank, alpha=alpha, dropout=dropout).to(device),
+        )
+
+    for block in sam.image_encoder.blocks:
+        for key in selected:
+            _replace_linear(block, _BLOCK_LINEAR_TARGETS[key])
+
+    if train_mask_decoder:
+        for p in sam.mask_decoder.parameters():
+            p.requires_grad = True

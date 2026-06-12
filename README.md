@@ -25,9 +25,8 @@ The datasets should be placed under `data/`:
 - `data/busi`
 - `data/cbis-ddsm`
 
-This trimmed repo keeps the main training, evaluation, and plotting pipeline.
-Encoder-only LoRA is still part of the reported results, but its configs and
-checkpoints are currently archived in `/home/jovyan/medsam-vpt-old-mh`.
+This trimmed repo keeps the main training, evaluation, plotting pipeline, and
+the encoder-only LoRA variant used in the final comparison tables.
 
 ## Training
 
@@ -38,6 +37,7 @@ python -m src.train --config configs/decoder_only.yaml
 python -m src.train --config configs/vpt_shallow.yaml
 python -m src.train --config configs/vpt_deep.yaml
 python -m src.train --config configs/lora.yaml
+python -m src.train --config configs/lora_encoder_only.yaml
 python -m src.train --config configs/full_ft.yaml
 ```
 
@@ -48,6 +48,7 @@ python -m src.train --config configs/decoder_only_pm20.yaml
 python -m src.train --config configs/vpt_shallow_pm20.yaml
 python -m src.train --config configs/vpt_deep_pm20.yaml
 python -m src.train --config configs/lora_pm20.yaml
+python -m src.train --config configs/lora_encoder_only_pm20.yaml
 python -m src.train --config configs/full_ft_pm20.yaml
 ```
 
@@ -58,6 +59,7 @@ python -m src.train --config configs/decoder_only_rand100.yaml
 python -m src.train --config configs/vpt_shallow_rand100.yaml
 python -m src.train --config configs/vpt_deep_rand100.yaml
 python -m src.train --config configs/lora_rand100.yaml
+python -m src.train --config configs/lora_encoder_only_rand100.yaml
 python -m src.train --config configs/full_ft_rand100.yaml
 ```
 
@@ -84,7 +86,7 @@ python scripts/aggregate_seeds.py
 ## Checkpoints Used
 
 The main paper figures in this trimmed repo use the following seed-0
-checkpoints. Encoder-only LoRA is referenced from the archived companion repo.
+checkpoints.
 
 | Method | Training regime | Config | Checkpoint |
 |---|---|---|---|
@@ -93,26 +95,27 @@ checkpoints. Encoder-only LoRA is referenced from the archived companion repo.
 | VPT-shallow | `pm=0` | [`configs/vpt_shallow.yaml`](configs/vpt_shallow.yaml) | `checkpoints/runs/vpt_shallow_seed0/best.pth` |
 | VPT-deep | `pm=0` | [`configs/vpt_deep.yaml`](configs/vpt_deep.yaml) | `checkpoints/runs/vpt_deep_seed0/best.pth` |
 | LoRA | `pm=0` | [`configs/lora.yaml`](configs/lora.yaml) | `checkpoints/runs/lora_seed0/best.pth` |
-| Encoder-only LoRA | `pm=0` | `medsam-vpt-old-mh/configs/lora_encoder_only.yaml` | `/home/jovyan/medsam-vpt-old-mh/checkpoints/runs_perfect_bboxes/lora_encoder_only_r28_all_seed0/best.pth` |
+| Encoder-only LoRA | `pm=0` | [`configs/lora_encoder_only.yaml`](configs/lora_encoder_only.yaml) | `checkpoints/runs_perfect_bboxes/lora_encoder_only_r28_all_seed0/best.pth` |
 | Full FT | `pm=0` | [`configs/full_ft.yaml`](configs/full_ft.yaml) | `checkpoints/runs/full_ft_seed0/best.pth` |
 | Decoder-only | `pm=20` | [`configs/decoder_only_pm20.yaml`](configs/decoder_only_pm20.yaml) | `checkpoints/runs_pm20/decoder_only_seed0_pm20/best.pth` |
 | VPT-shallow | `pm=20` | [`configs/vpt_shallow_pm20.yaml`](configs/vpt_shallow_pm20.yaml) | `checkpoints/runs_pm20/vpt_shallow_seed0_pm20/best.pth` |
 | VPT-deep | `pm=20` | [`configs/vpt_deep_pm20.yaml`](configs/vpt_deep_pm20.yaml) | `checkpoints/runs_pm20/vpt_deep_seed0_pm20/best.pth` |
 | LoRA | `pm=20` | [`configs/lora_pm20.yaml`](configs/lora_pm20.yaml) | `checkpoints/runs_pm20/lora_seed0_pm20/best.pth` |
-| Encoder-only LoRA | `pm=20` | `medsam-vpt-old-mh/configs/lora_encoder_only_pm20.yaml` | `/home/jovyan/medsam-vpt-old-mh/checkpoints/runs_pm20/lora_encoder_only_r28_all_seed0_pm20/best.pth` |
+| Encoder-only LoRA | `pm=20` | [`configs/lora_encoder_only_pm20.yaml`](configs/lora_encoder_only_pm20.yaml) | `checkpoints/runs_pm20/lora_encoder_only_r28_all_seed0_pm20/best.pth` |
 | Full FT | `pm=20` | [`configs/full_ft_pm20.yaml`](configs/full_ft_pm20.yaml) | `checkpoints/runs_pm20/full_ft_seed0_pm20/best.pth` |
 | Decoder-only | `rand100` | [`configs/decoder_only_rand100.yaml`](configs/decoder_only_rand100.yaml) | `checkpoints/runs_rand100/decoder_only_seed0_rand100/best.pth` |
 | VPT-shallow | `rand100` | [`configs/vpt_shallow_rand100.yaml`](configs/vpt_shallow_rand100.yaml) | `checkpoints/runs_rand100/vpt_shallow_seed0_rand100/best.pth` |
 | VPT-deep | `rand100` | [`configs/vpt_deep_rand100.yaml`](configs/vpt_deep_rand100.yaml) | `checkpoints/runs_rand100/vpt_deep_seed0_rand100/best.pth` |
 | LoRA | `rand100` | [`configs/lora_rand100.yaml`](configs/lora_rand100.yaml) | `checkpoints/runs_rand100/lora_seed0_rand100/best.pth` |
-| Encoder-only LoRA | `rand100` | `medsam-vpt-old-mh/configs/lora_encoder_only_rand100.yaml` | `/home/jovyan/medsam-vpt-old-mh/checkpoints/runs_rand100/lora_encoder_only_r28_all_seed0_rand100/best.pth` |
+| Encoder-only LoRA | `rand100` | [`configs/lora_encoder_only_rand100.yaml`](configs/lora_encoder_only_rand100.yaml) | `checkpoints/runs_rand100/lora_encoder_only_r28_all_seed0_rand100/best.pth` |
 | Full FT | `rand100` | [`configs/full_ft_rand100.yaml`](configs/full_ft_rand100.yaml) | `checkpoints/runs_rand100/full_ft_seed0_rand100/best.pth` |
 
 ## Main Result
 
 Tight-box Dice (`perturb_max_px = 0`) from
 [`results/summary_full_multiseed.csv`](results/summary_full_multiseed.csv), using the clean-box
-training runs (`training = pm=0`):
+training runs (`training = pm=0`). Encoder-only LoRA is included from
+[`results/encoder_only_multiseed_reference.csv`](results/encoder_only_multiseed_reference.csv):
 
 | Method | ISIC | PH2 | BUSI | CBIS-DDSM |
 |---|---:|---:|---:|---:|
@@ -146,6 +149,3 @@ Performance degradation heatmaps across increasing bbox jitter in evaluation acr
 Performance histograms.
 
 ![Performance histograms](figures/paper_visuals/performance_histograms.png)
-
-Encoder-only LoRA numbers above come from archived multiseed evaluation runs in
-`/home/jovyan/medsam-vpt-old-mh/results/runs_all_datasets.csv`.

@@ -1,0 +1,40 @@
+# Encoder-only LoRA fine-tuning with random bbox jitter [0, 100] per training step.
+# Rank-28 adapters on all encoder-block linear layers; mask decoder stays frozen.
+
+name: lora_encoder_only_r28_all_seed0_rand100
+method: lora
+seed: 0
+
+method_kwargs:
+  rank: 28
+  alpha: 56
+  dropout: 0.0
+  train_mask_decoder: false
+  target_modules: all
+
+model:
+  arch: vit_b
+  checkpoint: checkpoints/medsam_vit_b.pth
+  image_size: 1024
+
+data:
+  root: data
+  bbox_perturb_pixels: 100
+  random_perturb: true
+
+train:
+  batch_size: 1
+  num_workers: 2
+  epochs: 6
+  lr: 5.0e-4
+  weight_decay: 0.0
+  dice_weight: 0.5
+  amp: true
+  cooldown_seconds: 60
+
+eval:
+  batch_size: 1
+  num_workers: 2
+
+output:
+  checkpoint_dir: checkpoints/runs_rand100

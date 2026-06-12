@@ -1,0 +1,5 @@
+method,training,dataset,dice_mean,dice_std,n_seeds
+lora_encoder_only_r28_all,pm=0,isic2018_val,0.9574,0.0013,3
+lora_encoder_only_r28_all,pm=0,ph2,0.9605,0.0006,3
+lora_encoder_only_r28_all,pm=0,busi,0.9056,0.0020,3
+lora_encoder_only_r28_all,pm=0,cbis_ddsm,0.8050,0.0114,3
