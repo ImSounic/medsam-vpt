@@ -112,10 +112,7 @@ checkpoints.
 
 ## Main Result
 
-Tight-box Dice (`perturb_max_px = 0`) from
-[`results/summary_full_multiseed.csv`](results/summary_full_multiseed.csv), using the clean-box
-training runs (`training = pm=0`). Encoder-only LoRA is included from
-[`results/encoder_only_multiseed_reference.csv`](results/encoder_only_multiseed_reference.csv):
+Tight-box Dice (`perturb_max_px = 0`) on in-domain (ISIC) close-OOD (PH2)  and far-OOD (BUSI, CBIS-DDSM).
 
 | Method | ISIC | PH2 | BUSI | CBIS-DDSM |
 |---|---:|---:|---:|---:|
