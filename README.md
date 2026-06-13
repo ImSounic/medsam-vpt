@@ -116,11 +116,6 @@ Performance degradation heatmaps across increasing bbox jitter in evaluation acr
 
 ![Degradation heatmap](figures/paper_visuals/degradation_heatmap.png)
 
-Performance histograms.
-
-![Performance histograms](figures/paper_visuals/performance_histograms.png)
-
-
 
 ## Checkpoints Used
 
