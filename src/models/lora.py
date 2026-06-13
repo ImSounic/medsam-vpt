@@ -1,4 +1,4 @@
-"""LoRA fine-tuning for MedSAM, with support for encoder-only variants."""
+"""LoRA fine-tuning for MedSAM, including encoder-only variants."""
 
 from __future__ import annotations
 
@@ -63,12 +63,7 @@ def apply_lora(
     target_modules: str | Iterable[str] = "qkv",
     **_kwargs,
 ) -> None:
-    """Configure SAM for LoRA in place.
-
-    By default this matches the original setup: LoRA on encoder qkv and a
-    trainable mask decoder. Encoder-only LoRA uses `train_mask_decoder=False`
-    and `target_modules=all`.
-    """
+    """Configure SAM for LoRA in place."""
     for p in sam.parameters():
         p.requires_grad = False
 

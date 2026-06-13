@@ -1,4 +1,4 @@
-"""Generate the three kept paper visuals from summary_full_multiseed.csv."""
+"""Generate the three paper visuals from results/summary_full_multiseed.csv."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-INPUT_CSV = REPO_ROOT / "summary_full_multiseed.csv"
+INPUT_CSV = REPO_ROOT / "results" / "summary_full_multiseed.csv"
 OUT_DIR = REPO_ROOT / "figures" / "paper_visuals"
 
 METHOD_ORDER = [

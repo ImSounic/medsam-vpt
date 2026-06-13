@@ -9,7 +9,6 @@ URL = "https://zenodo.org/records/10689643/files/medsam_vit_b.pth"
 TARGET_DIR = Path(__file__).resolve().parent.parent / "checkpoints"
 TARGET = TARGET_DIR / "medsam_vit_b.pth"
 
-
 def main() -> int:
     TARGET_DIR.mkdir(parents=True, exist_ok=True)
 

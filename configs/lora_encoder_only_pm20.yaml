@@ -1,5 +1,4 @@
-# Encoder-only LoRA fine-tuning with bbox jitter at training time.
-# Rank-28 adapters on all encoder-block linear layers; mask decoder stays frozen.
+# Encoder-only LoRA with fixed bbox jitter at training time.
 
 name: lora_encoder_only_r28_all_seed0_pm20
 method: lora

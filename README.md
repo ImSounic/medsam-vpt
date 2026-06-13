@@ -7,6 +7,9 @@
 <sup>*Equal contribution</sup>
 </div>
 
+We study how MedSAM adaptation behaves under domain shift and bounding-box
+prompt noise. The comparison covers zero-shot MedSAM, decoder-only fine-tuning,
+VPT-shallow, VPT-deep, LoRA, encoder-only LoRA, and full fine-tuning.
 
 ## Setup
 
@@ -24,9 +27,6 @@ The datasets should be placed under `data/`:
 - `data/ph2`
 - `data/busi`
 - `data/cbis-ddsm`
-
-This trimmed repo keeps the main training, evaluation, plotting pipeline, and
-the encoder-only LoRA variant used in the final comparison tables.
 
 ## Training
 
@@ -65,8 +65,6 @@ python -m src.train --config configs/full_ft_rand100.yaml
 
 ## Evaluation
 
-Zero-shot evaluation:
-
 ```bash
 python -m src.eval --config configs/zero_shot.yaml
 ```
@@ -77,7 +75,7 @@ Example checkpoint evaluation:
 python -m src.eval --config configs/lora.yaml --checkpoint checkpoints/runs/lora_seed0/best.pth
 ```
 
-To aggregate the three seeds:
+Aggregate the three seeds:
 
 ```bash
 python scripts/aggregate_seeds.py
@@ -85,7 +83,7 @@ python scripts/aggregate_seeds.py
 
 ## Main Result
 
-Tight-box Dice (`perturb_max_px = 0`) on in-domain (ISIC) close-OOD (PH2)  and far-OOD (BUSI, CBIS-DDSM).
+Tight-box Dice (`perturb_max_px = 0`) on ISIC, PH2, BUSI, and CBIS-DDSM:
 
 | Method | ISIC | PH2 | BUSI | CBIS-DDSM |
 |---|---:|---:|---:|---:|
@@ -97,26 +95,18 @@ Tight-box Dice (`perturb_max_px = 0`) on in-domain (ISIC) close-OOD (PH2)  and f
 | Encoder-only LoRA | 0.957 | 0.961 | 0.906 | 0.805 |
 | Full FT | 0.961 | 0.958 | 0.901 | 0.828 |
 
+Full fine-tuning gives the strongest overall trade-off. Encoder-only LoRA is
+the strongest parameter-efficient method on the far-OOD datasets.
 
 ## Figures
 
-Overview across all jitters and datasets.
-
 ![All jitters across all datasets](figures/paper_visuals/all_jitters_all_datasets.png)
-
-Prompt perturbation example:
 
 ![Prompt perturbation example](figures/paper_visuals/prompt_perturbation_examples.png)
 
-Performance degradation curves across increasing bbox jitter in evaluation across models.
-
 ![Degradation curves](figures/paper_visuals/degradation_curves.png)
 
-Performance degradation heatmaps across increasing bbox jitter in evaluation across models.
-
 ![Degradation heatmap](figures/paper_visuals/degradation_heatmap.png)
-
-Performance histograms.
 
 ![Performance histograms](figures/paper_visuals/performance_histograms.png)
 
@@ -124,8 +114,7 @@ Performance histograms.
 
 ## Checkpoints Used
 
-The main paper figures in this trimmed repo use the following seed-0
-checkpoints.
+Seed-0 checkpoints used for the main figures:
 
 | Method | Training regime | Config | Checkpoint |
 |---|---|---|---|

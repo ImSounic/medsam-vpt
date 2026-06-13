@@ -1,5 +1,4 @@
-# Encoder-only LoRA fine-tuning on MedSAM image encoder.
-# Rank-28 adapters on all encoder-block linear layers; mask decoder stays frozen.
+# Encoder-only LoRA on the MedSAM image encoder.
 
 name: lora_encoder_only_r28_all_seed1
 method: lora
