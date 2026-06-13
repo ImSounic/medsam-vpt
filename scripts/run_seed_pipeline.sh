@@ -1,42 +1,79 @@
 #!/usr/bin/env bash
-# Run the full seed-1 + seed-2 training + eval pipeline (~50h on A10); run inside tmux, stops on first error with tee'd per-step logs.
+# Full seed-1 + seed-2 train/eval pipeline. Run inside tmux; stops on first
+# error and keeps one log per step.
 
-set -e
-set -u
-set -o pipefail
+set -euo pipefail
 
-cd "$(dirname "$0")/.."  # repo root
-echo "[pipeline] working dir: $(pwd)"
-echo "[pipeline] started at:  $(date -Iseconds)"
-echo
+cd "$(dirname "$0")/.."
 
-# Output directories
-mkdir -p \
-    checkpoints/runs_seed1 checkpoints/runs_seed1_pm20 checkpoints/runs_seed1_rand100 \
-    checkpoints/runs_seed2 checkpoints/runs_seed2_pm20 checkpoints/runs_seed2_rand100 \
-    bbox_robustness/results_seed1 bbox_robustness/results_seed1_pm20 bbox_robustness/results_seed1_rand100 \
-    bbox_robustness/results_seed2 bbox_robustness/results_seed2_pm20 bbox_robustness/results_seed2_rand100
+METHODS=(
+    decoder_only
+    vpt_shallow
+    vpt_deep
+    lora
+    lora_encoder_only
+    full_ft
+)
+REGIMES=(clean pm20 rand100)
+BBOX_EVAL_SCRIPT="bbox_robustness/eval_bbox_robust.py"
 
-# Helper for nicer section markers
-section () {
+section() {
     echo
     echo "============================================================"
     echo "[pipeline] $1  ($(date -Iseconds))"
     echo "============================================================"
 }
 
-# Per-step training runner. Usage: train <config_name> <log_dir>
-train () {
+regime_label() {
+    case "$1" in
+        clean) echo "pm=0" ;;
+        pm20) echo "pm=20" ;;
+        rand100) echo "rand100" ;;
+        *)
+            echo "unknown regime: $1" >&2
+            return 1
+            ;;
+    esac
+}
+
+regime_suffix() {
+    case "$1" in
+        clean) echo "" ;;
+        pm20) echo "_pm20" ;;
+        rand100) echo "_rand100" ;;
+        *)
+            echo "unknown regime: $1" >&2
+            return 1
+            ;;
+    esac
+}
+
+checkpoint_dir_for() {
+    local seed="$1"
+    local regime="$2"
+    local suffix
+    suffix="$(regime_suffix "$regime")"
+    echo "checkpoints/runs_seed${seed}${suffix}"
+}
+
+results_csv_for() {
+    local seed="$1"
+    local regime="$2"
+    local suffix
+    suffix="$(regime_suffix "$regime")"
+    echo "results/runs_seed${seed}${suffix}.csv"
+}
+
+train_one() {
     local cfg="$1"
     local log_dir="$2"
     local stem
     stem="$(basename "$cfg" .yaml)"
-    echo "[pipeline] -> training $cfg (log: $log_dir/$stem.log)"
+    echo "[pipeline] -> training $cfg"
     python -m src.train --config "configs/$cfg" 2>&1 | tee "$log_dir/$stem.log"
 }
 
-# Per-step eval runners.
-eval_standard () {
+eval_standard() {
     local glob="$1"
     local out_csv="$2"
     local log_path="$3"
@@ -47,111 +84,99 @@ eval_standard () {
         --out-csv "$out_csv" 2>&1 | tee "$log_path"
 }
 
-eval_bbox () {
+eval_bbox() {
     local glob="$1"
     local out_dir="$2"
     local log_path="$3"
-    echo "[pipeline] -> bbox-robustness eval glob=$glob out=$out_dir"
-    python bbox_robustness/eval_bbox_robust.py \
+    echo "[pipeline] -> bbox eval glob=$glob out=$out_dir"
+    python "$BBOX_EVAL_SCRIPT" \
         --config configs/zero_shot.yaml \
         --checkpoint-glob "$glob" \
         --n-samples 1 \
         --out-dir "$out_dir" 2>&1 | tee "$log_path"
 }
 
-# Seed 1 - training (15 methods, ~16h on A10)
-section "SEED 1 - training pm=0 (5 methods)"
-train decoder_only_seed1.yaml  checkpoints/runs_seed1
-train vpt_shallow_seed1.yaml   checkpoints/runs_seed1
-train vpt_deep_seed1.yaml      checkpoints/runs_seed1
-train lora_seed1.yaml          checkpoints/runs_seed1
-train full_ft_seed1.yaml       checkpoints/runs_seed1
+train_regime() {
+    local seed="$1"
+    local regime="$2"
+    local suffix
+    local checkpoint_dir
+    suffix="$(regime_suffix "$regime")"
+    checkpoint_dir="$(checkpoint_dir_for "$seed" "$regime")"
 
-section "SEED 1 - training pm=20 (5 methods)"
-train decoder_only_seed1_pm20.yaml  checkpoints/runs_seed1_pm20
-train vpt_shallow_seed1_pm20.yaml   checkpoints/runs_seed1_pm20
-train vpt_deep_seed1_pm20.yaml      checkpoints/runs_seed1_pm20
-train lora_seed1_pm20.yaml          checkpoints/runs_seed1_pm20
-train full_ft_seed1_pm20.yaml       checkpoints/runs_seed1_pm20
+    mkdir -p "$checkpoint_dir"
+    section "SEED ${seed} - training $(regime_label "$regime") (${#METHODS[@]} methods)"
+    for method in "${METHODS[@]}"; do
+        train_one "${method}_seed${seed}${suffix}.yaml" "$checkpoint_dir"
+    done
+}
 
-section "SEED 1 - training rand100 (5 methods)"
-train decoder_only_seed1_rand100.yaml  checkpoints/runs_seed1_rand100
-train vpt_shallow_seed1_rand100.yaml   checkpoints/runs_seed1_rand100
-train vpt_deep_seed1_rand100.yaml      checkpoints/runs_seed1_rand100
-train lora_seed1_rand100.yaml          checkpoints/runs_seed1_rand100
-train full_ft_seed1_rand100.yaml       checkpoints/runs_seed1_rand100
+eval_regime() {
+    local seed="$1"
+    local regime="$2"
+    local suffix
+    local checkpoint_dir
+    suffix="$(regime_suffix "$regime")"
+    checkpoint_dir="$(checkpoint_dir_for "$seed" "$regime")"
 
-# Seed 2 - training (15 methods, ~16h on A10)
-section "SEED 2 - training pm=0 (5 methods)"
-train decoder_only_seed2.yaml  checkpoints/runs_seed2
-train vpt_shallow_seed2.yaml   checkpoints/runs_seed2
-train vpt_deep_seed2.yaml      checkpoints/runs_seed2
-train lora_seed2.yaml          checkpoints/runs_seed2
-train full_ft_seed2.yaml       checkpoints/runs_seed2
+    mkdir -p results
+    section "SEED ${seed} - standard eval $(regime_label "$regime")"
+    eval_standard \
+        "${checkpoint_dir}/*/best.pth" \
+        "$(results_csv_for "$seed" "$regime")" \
+        "results/eval_seed${seed}${suffix}.log"
+}
 
-section "SEED 2 - training pm=20 (5 methods)"
-train decoder_only_seed2_pm20.yaml  checkpoints/runs_seed2_pm20
-train vpt_shallow_seed2_pm20.yaml   checkpoints/runs_seed2_pm20
-train vpt_deep_seed2_pm20.yaml      checkpoints/runs_seed2_pm20
-train lora_seed2_pm20.yaml          checkpoints/runs_seed2_pm20
-train full_ft_seed2_pm20.yaml       checkpoints/runs_seed2_pm20
+eval_bbox_regime() {
+    local seed="$1"
+    local regime="$2"
+    local suffix
+    local checkpoint_dir
+    local out_dir
+    suffix="$(regime_suffix "$regime")"
+    checkpoint_dir="$(checkpoint_dir_for "$seed" "$regime")"
+    out_dir="bbox_robustness/results_seed${seed}${suffix}"
 
-section "SEED 2 - training rand100 (5 methods)"
-train decoder_only_seed2_rand100.yaml  checkpoints/runs_seed2_rand100
-train vpt_shallow_seed2_rand100.yaml   checkpoints/runs_seed2_rand100
-train vpt_deep_seed2_rand100.yaml      checkpoints/runs_seed2_rand100
-train lora_seed2_rand100.yaml          checkpoints/runs_seed2_rand100
-train full_ft_seed2_rand100.yaml       checkpoints/runs_seed2_rand100
+    mkdir -p "$out_dir"
+    eval_bbox \
+        "${checkpoint_dir}/*/best.pth" \
+        "$out_dir" \
+        "$out_dir/eval.log"
+}
 
-# Seed 1 - eval (~8.5h on A10)
-section "SEED 1 - standard tight-bbox eval (3 invocations)"
-eval_standard 'checkpoints/runs_seed1/*/best.pth' \
-              results/runs_seed1.csv \
-              results/eval_seed1.log
-eval_standard 'checkpoints/runs_seed1_pm20/*/best.pth' \
-              results/runs_seed1_pm20.csv \
-              results/eval_seed1_pm20.log
-eval_standard 'checkpoints/runs_seed1_rand100/*/best.pth' \
-              results/runs_seed1_rand100.csv \
-              results/eval_seed1_rand100.log
+echo "[pipeline] working dir: $(pwd)"
+echo "[pipeline] started at:  $(date -Iseconds)"
 
-section "SEED 1 - bbox robustness eval (3 invocations)"
-eval_bbox 'checkpoints/runs_seed1/*/best.pth' \
-          bbox_robustness/results_seed1 \
-          bbox_robustness/results_seed1/eval.log
-eval_bbox 'checkpoints/runs_seed1_pm20/*/best.pth' \
-          bbox_robustness/results_seed1_pm20 \
-          bbox_robustness/results_seed1_pm20/eval.log
-eval_bbox 'checkpoints/runs_seed1_rand100/*/best.pth' \
-          bbox_robustness/results_seed1_rand100 \
-          bbox_robustness/results_seed1_rand100/eval.log
+for seed in 1 2; do
+    for regime in "${REGIMES[@]}"; do
+        train_regime "$seed" "$regime"
+    done
+done
 
-# Seed 2 - eval (~8.5h on A10)
-section "SEED 2 - standard tight-bbox eval (3 invocations)"
-eval_standard 'checkpoints/runs_seed2/*/best.pth' \
-              results/runs_seed2.csv \
-              results/eval_seed2.log
-eval_standard 'checkpoints/runs_seed2_pm20/*/best.pth' \
-              results/runs_seed2_pm20.csv \
-              results/eval_seed2_pm20.log
-eval_standard 'checkpoints/runs_seed2_rand100/*/best.pth' \
-              results/runs_seed2_rand100.csv \
-              results/eval_seed2_rand100.log
+for seed in 1 2; do
+    for regime in "${REGIMES[@]}"; do
+        eval_regime "$seed" "$regime"
+    done
+done
 
-section "SEED 2 - bbox robustness eval (3 invocations)"
-eval_bbox 'checkpoints/runs_seed2/*/best.pth' \
-          bbox_robustness/results_seed2 \
-          bbox_robustness/results_seed2/eval.log
-eval_bbox 'checkpoints/runs_seed2_pm20/*/best.pth' \
-          bbox_robustness/results_seed2_pm20 \
-          bbox_robustness/results_seed2_pm20/eval.log
-eval_bbox 'checkpoints/runs_seed2_rand100/*/best.pth' \
-          bbox_robustness/results_seed2_rand100 \
-          bbox_robustness/results_seed2_rand100/eval.log
+if [[ -f "$BBOX_EVAL_SCRIPT" ]]; then
+    for seed in 1 2; do
+        section "SEED ${seed} - bbox robustness eval"
+        for regime in "${REGIMES[@]}"; do
+            eval_bbox_regime "$seed" "$regime"
+        done
+    done
+else
+    section "SKIPPING bbox robustness eval"
+    echo "[pipeline] ${BBOX_EVAL_SCRIPT} is not present in this trimmed repo."
+    echo "[pipeline] Standard eval, aggregation, and paper visuals will still run."
+fi
 
-# Aggregate everything
 section "AGGREGATING across seeds"
 python scripts/aggregate_seeds.py
+
+section "RENDERING paper visuals"
+python scripts/plot_paper_visuals.py
 
 echo
 echo "============================================================"
@@ -159,8 +184,8 @@ echo "[pipeline] DONE at $(date -Iseconds)"
 echo "============================================================"
 echo
 echo "Generated files:"
-echo "  summary_full_multiseed.csv"
-echo "  bbox_robustness/comparison/seed_summary_table.md"
-echo "  bbox_robustness/comparison/seed_error_bars.png"
-echo
-echo "Next: commit + push the new eval CSVs and aggregated outputs."
+echo "  results/summary_full_multiseed.csv"
+echo "  results/summary_multiseed.md"
+echo "  figures/paper_visuals/degradation_curves.png"
+echo "  figures/paper_visuals/degradation_heatmap.png"
+echo "  figures/paper_visuals/performance_histograms.png"

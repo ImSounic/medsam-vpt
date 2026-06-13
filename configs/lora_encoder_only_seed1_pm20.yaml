@@ -1,8 +1,8 @@
-# Encoder-only LoRA on the MedSAM image encoder.
+# Encoder-only LoRA with fixed bbox jitter at training time.
 
-name: lora_encoder_only_r28_all_seed2
+name: lora_encoder_only_r28_all_seed1_pm20
 method: lora
-seed: 2
+seed: 1
 
 method_kwargs:
   rank: 28
@@ -18,7 +18,7 @@ model:
 
 data:
   root: data
-  bbox_perturb_pixels: 0
+  bbox_perturb_pixels: 20
 
 train:
   batch_size: 1
@@ -35,4 +35,4 @@ eval:
   num_workers: 2
 
 output:
-  checkpoint_dir: checkpoints/runs_seed2
+  checkpoint_dir: checkpoints/runs_seed1_pm20

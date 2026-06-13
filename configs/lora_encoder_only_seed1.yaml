@@ -35,4 +35,4 @@ eval:
   num_workers: 2
 
 output:
-  checkpoint_dir: checkpoints/runs_perfect_bboxes
+  checkpoint_dir: checkpoints/runs_seed1

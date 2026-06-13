@@ -1,6 +1,6 @@
-# Encoder-only LoRA on the MedSAM image encoder.
+# Encoder-only LoRA with random bbox jitter in [0, 100].
 
-name: lora_encoder_only_r28_all_seed2
+name: lora_encoder_only_r28_all_seed2_rand100
 method: lora
 seed: 2
 
@@ -18,7 +18,8 @@ model:
 
 data:
   root: data
-  bbox_perturb_pixels: 0
+  bbox_perturb_pixels: 100
+  random_perturb: true
 
 train:
   batch_size: 1
@@ -35,4 +36,4 @@ eval:
   num_workers: 2
 
 output:
-  checkpoint_dir: checkpoints/runs_seed2
+  checkpoint_dir: checkpoints/runs_seed2_rand100

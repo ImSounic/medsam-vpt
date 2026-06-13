@@ -64,14 +64,23 @@ def load_config(path: Path) -> dict:
         return yaml.safe_load(f)
 
 
+def canonical_method_name(method: str, run_name: str) -> str:
+    """Keep encoder-only LoRA separate from standard LoRA in result tables."""
+    if method == "lora" and run_name.startswith("lora_encoder_only"):
+        return "lora_encoder_only"
+    return method
+
+
 def _read_checkpoint(ckpt_path: Path) -> dict:
     """Pull method/method_kwargs/run_name/seed/trainable_state from a .pth."""
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     saved_cfg = ckpt.get("config", {}) or {}
+    run_name = saved_cfg.get("name", ckpt["method"])
     return {
         "method": ckpt["method"],
+        "display_method": canonical_method_name(ckpt["method"], run_name),
         "method_kwargs": saved_cfg.get("method_kwargs", {}) or {},
-        "run_name": saved_cfg.get("name", ckpt["method"]),
+        "run_name": run_name,
         "seed": int(saved_cfg.get("seed", 0)),
         "trainable_state": ckpt["trainable_state"],
         "epoch": ckpt.get("epoch"),
@@ -283,7 +292,7 @@ def eval_one_checkpoint(
     param_info = _apply_method_and_weights(sam, info, device)
     sam.eval()
     print(
-        f"\n[multi-eval] === {info['method']} ({ckpt_path.parent.name}) === "
+        f"\n[multi-eval] === {info['display_method']} ({ckpt_path.parent.name}) === "
         f"trainable={param_info['trainable']:,}"
     )
     if info["epoch"] is not None:
@@ -334,7 +343,7 @@ def eval_one_checkpoint(
         rows.append(
             _build_runs_row(
                 info["run_name"],
-                info["method"],
+                info["display_method"],
                 ds_name,
                 info["seed"],
                 agg,

@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-import csv
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# Source CSV discovery: seed=0 paths plus seed{1,2} siblings.
 TRAININGS = ("pm=0", "pm=20", "rand100")
 SEEDS = (0, 1, 2)
 
@@ -36,16 +32,23 @@ def bbox_csv_for_seed(seed: int, training: str) -> Path:
     return REPO_ROOT / "bbox_robustness" / f"results_seed{seed}{suffix}" / "runs.csv"
 
 
-METHODS = ["zero_shot", "decoder_only", "vpt_shallow", "vpt_deep", "lora", "full_ft"]
+METHODS = [
+    "zero_shot",
+    "decoder_only",
+    "vpt_shallow",
+    "vpt_deep",
+    "lora",
+    "lora_encoder_only",
+    "full_ft",
+]
 DATASETS = ["isic2018_test", "ph2", "busi", "cbis_ddsm"]
-PERTURBS = [0, 20, 50, 100, 200]
-
 METHOD_LABELS = {
     "zero_shot": "Zero-shot",
     "decoder_only": "Decoder-only",
     "vpt_shallow": "VPT-shallow",
     "vpt_deep": "VPT-deep",
     "lora": "LoRA",
+    "lora_encoder_only": "Encoder-only LoRA",
     "full_ft": "Full FT",
 }
 DATASET_LABELS = {
@@ -54,15 +57,13 @@ DATASET_LABELS = {
     "busi": "BUSI (far-OOD ultrasound)",
     "cbis_ddsm": "CBIS-DDSM (far-OOD mammography)",
 }
-METHOD_COLORS = {
-    "zero_shot": "#808080",
-    "decoder_only": "#1f77b4",
-    "vpt_shallow": "#ff7f0e",
-    "vpt_deep": "#d62728",
-    "lora": "#9467bd",
-    "full_ft": "#2ca02c",
-}
-TRAINING_LINESTYLES = {"pm=0": "-", "pm=20": "--", "rand100": ":"}
+
+
+def canonical_method_name(method: str, run_name: str) -> str:
+    """Recover encoder-only LoRA identity from older CSVs if needed."""
+    if method == "lora" and run_name.startswith("lora_encoder_only"):
+        return "lora_encoder_only"
+    return method
 
 
 def load_all_seeds() -> pd.DataFrame:
@@ -79,7 +80,9 @@ def load_all_seeds() -> pd.DataFrame:
                     rows.append(
                         {
                             "seed": seed,
-                            "method": r["method"],
+                            "method": canonical_method_name(
+                                str(r["method"]), str(r.get("run_name", ""))
+                            ),
                             "training": training,
                             "dataset": r["dataset"],
                             "perturb_max_px": 0,
@@ -95,7 +98,9 @@ def load_all_seeds() -> pd.DataFrame:
                     rows.append(
                         {
                             "seed": seed,
-                            "method": r["method"],
+                            "method": canonical_method_name(
+                                str(r["method"]), str(r.get("run_name", ""))
+                            ),
                             "training": training,
                             "dataset": r["dataset"],
                             "perturb_max_px": int(r["perturb_max_px"]),
@@ -210,107 +215,6 @@ def write_summary_markdown(agg: pd.DataFrame, out_path: Path) -> None:
     print(f"[agg-seeds] wrote {out_path}")
 
 
-def plot_curves_with_seed_bands(agg: pd.DataFrame, out_path: Path) -> None:
-    """Overlay degradation curves with shaded +/-std bands across seeds."""
-    fig, axes = plt.subplots(2, 2, figsize=(15, 11), sharex=True)
-    axes_flat = axes.flatten()
-
-    for ax, ds in zip(axes_flat, DATASETS):
-        for m in METHODS:
-            if m == "zero_shot":
-                sub = agg[(agg["method"] == m) & (agg["dataset"] == ds)].sort_values(
-                    "perturb_max_px"
-                )
-                if not sub.empty:
-                    ax.plot(
-                        sub["perturb_max_px"],
-                        sub["dice_mean_seeds"],
-                        marker="o",
-                        linewidth=2.5,
-                        color=METHOD_COLORS[m],
-                        label=METHOD_LABELS[m],
-                    )
-                    ax.fill_between(
-                        sub["perturb_max_px"],
-                        sub["dice_mean_seeds"] - sub["dice_std_seeds"],
-                        sub["dice_mean_seeds"] + sub["dice_std_seeds"],
-                        color=METHOD_COLORS[m],
-                        alpha=0.10,
-                    )
-                continue
-            for tr in TRAININGS:
-                sub = agg[
-                    (agg["method"] == m)
-                    & (agg["training"] == tr)
-                    & (agg["dataset"] == ds)
-                ].sort_values("perturb_max_px")
-                if sub.empty:
-                    continue
-                ax.plot(
-                    sub["perturb_max_px"],
-                    sub["dice_mean_seeds"],
-                    color=METHOD_COLORS[m],
-                    linestyle=TRAINING_LINESTYLES[tr],
-                    linewidth=1.6,
-                    marker="o",
-                    markersize=4,
-                    alpha=0.9,
-                    label="_nolegend_",
-                )
-                ax.fill_between(
-                    sub["perturb_max_px"],
-                    sub["dice_mean_seeds"] - sub["dice_std_seeds"],
-                    sub["dice_mean_seeds"] + sub["dice_std_seeds"],
-                    color=METHOD_COLORS[m],
-                    alpha=0.10,
-                )
-        ax.set_title(DATASET_LABELS.get(ds, ds))
-        ax.set_xlabel("Eval bbox max expansion (px)")
-        ax.set_ylabel("Dice (mean +/- std across seeds)")
-        ax.grid(alpha=0.3)
-        ax.set_xticks(PERTURBS)
-
-    method_handles = [
-        plt.Line2D(
-            [],
-            [],
-            color=METHOD_COLORS[m],
-            marker="o",
-            linewidth=2,
-            label=METHOD_LABELS[m],
-        )
-        for m in METHODS
-    ]
-    style_handles = [
-        plt.Line2D(
-            [], [], color="black", linewidth=2, linestyle="-", label="pm=0 train"
-        ),
-        plt.Line2D(
-            [], [], color="black", linewidth=2, linestyle="--", label="pm=20 train"
-        ),
-        plt.Line2D(
-            [], [], color="black", linewidth=2, linestyle=":", label="rand100 train"
-        ),
-    ]
-    fig.legend(
-        handles=method_handles + style_handles,
-        loc="lower center",
-        ncol=5,
-        frameon=False,
-        bbox_to_anchor=(0.5, -0.04),
-        fontsize=10,
-    )
-    fig.suptitle(
-        "Multi-seed curves with +/-std bands (n_seeds varies per cell, see summary CSV)",
-        fontsize=13,
-        y=1.00,
-    )
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=130, bbox_inches="tight")
-    plt.close(fig)
-    print(f"[agg-seeds] wrote {out_path}")
-
-
 def main() -> int:
     print("[agg-seeds] scanning for seed CSVs...")
     df = load_all_seeds()
@@ -328,13 +232,8 @@ def main() -> int:
         f"[agg-seeds] aggregated to {len(agg)} unique (method, training, dataset, perturb) cells"
     )
 
-    write_csv(agg, REPO_ROOT / "summary_full_multiseed.csv")
-    write_summary_markdown(
-        agg, REPO_ROOT / "bbox_robustness" / "comparison" / "seed_summary_table.md"
-    )
-    plot_curves_with_seed_bands(
-        agg, REPO_ROOT / "bbox_robustness" / "comparison" / "seed_error_bars.png"
-    )
+    write_csv(agg, REPO_ROOT / "results" / "summary_full_multiseed.csv")
+    write_summary_markdown(agg, REPO_ROOT / "results" / "summary_multiseed.md")
 
     # n_seeds per cell surfaces incomplete runs
     n_seeds_dist = agg["n_seeds"].value_counts().sort_index()

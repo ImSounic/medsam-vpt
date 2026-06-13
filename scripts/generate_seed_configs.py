@@ -1,4 +1,4 @@
-"""Generate seed-1 and seed-2 training configs from the 15 seed-0 ones via text-mode rewrite of seed/name/checkpoint_dir."""
+"""Generate seed-1 and seed-2 training configs from the seed-0 ones."""
 
 from __future__ import annotations
 
@@ -16,18 +16,21 @@ BASE_CONFIGS = [
     ("vpt_deep.yaml", ""),
     ("lora.yaml", ""),
     ("full_ft.yaml", ""),
+    ("lora_encoder_only.yaml", ""),
     # pm=20 fixed jitter
     ("decoder_only_pm20.yaml", "_pm20"),
     ("vpt_shallow_pm20.yaml", "_pm20"),
     ("vpt_deep_pm20.yaml", "_pm20"),
     ("lora_pm20.yaml", "_pm20"),
     ("full_ft_pm20.yaml", "_pm20"),
+    ("lora_encoder_only_pm20.yaml", "_pm20"),
     # rand100 random jitter
     ("decoder_only_rand100.yaml", "_rand100"),
     ("vpt_shallow_rand100.yaml", "_rand100"),
     ("vpt_deep_rand100.yaml", "_rand100"),
     ("lora_rand100.yaml", "_rand100"),
     ("full_ft_rand100.yaml", "_rand100"),
+    ("lora_encoder_only_rand100.yaml", "_rand100"),
 ]
 
 EXTRA_SEEDS = [1, 2]
@@ -55,15 +58,22 @@ def transform_config_text(text: str, seed: int, suffix: str) -> str:
         flags=re.MULTILINE,
     )
 
-    # 3. checkpoint_dir: runs[_suffix] -> runs_seedN[_suffix]; match only that line since medsam_vit_b.pth also has "checkpoints/"
+    # 3. checkpoint_dir -> seed-specific run directory; match only that line since
+    #    medsam_vit_b.pth also lives under checkpoints/.
     def repl_ckptdir(m):
         prefix = m.group(1)
-        old_value = m.group(2)  # "runs", "runs_pm20", etc.
-        new_value = old_value.replace("runs", f"runs_seed{seed}", 1)
+        old_value = m.group(2)
+        mapping = {
+            "runs": f"runs_seed{seed}",
+            "runs_pm20": f"runs_seed{seed}_pm20",
+            "runs_rand100": f"runs_seed{seed}_rand100",
+            "runs_perfect_bboxes": f"runs_seed{seed}",
+        }
+        new_value = mapping[old_value]
         return f"{prefix}{new_value}"
 
     out = re.sub(
-        r"(^\s*checkpoint_dir:\s*checkpoints/)(runs(?:_pm20|_rand100)?)\b",
+        r"(^\s*checkpoint_dir:\s*checkpoints/)(runs(?:_perfect_bboxes|_pm20|_rand100)?)\b",
         repl_ckptdir,
         out,
         count=1,
@@ -104,8 +114,8 @@ def main() -> int:
             print(f"[generate-seeds] wrote {out_path.name}")
     print(f"\n[generate-seeds] done: {n_written} configs written, {n_skipped} skipped")
     print("\nNext steps:")
-    print("  1. Commit + push the 30 new configs")
-    print("  2. On JupyterLab: pull, then launch the 30 trainings (~32h)")
+    print(f"  1. Commit + push the {n_written} generated configs")
+    print(f"  2. On JupyterLab: pull, then launch the {n_written} trainings")
     print(
         "  3. After training: run evals with --checkpoint-glob 'checkpoints/runs_seedN*/*/best.pth'"
     )

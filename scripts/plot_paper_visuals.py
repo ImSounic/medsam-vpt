@@ -18,6 +18,7 @@ METHOD_ORDER = [
     "vpt_shallow",
     "vpt_deep",
     "lora",
+    "lora_encoder_only",
     "full_ft",
 ]
 METHOD_LABELS = {
@@ -26,6 +27,7 @@ METHOD_LABELS = {
     "vpt_shallow": "VPT-shallow",
     "vpt_deep": "VPT-deep",
     "lora": "LoRA",
+    "lora_encoder_only": "Encoder-only LoRA",
     "full_ft": "Full FT",
 }
 METHOD_COLORS = {
@@ -34,6 +36,7 @@ METHOD_COLORS = {
     "vpt_shallow": "#ff7f0e",
     "vpt_deep": "#d62728",
     "lora": "#2ca02c",
+    "lora_encoder_only": "#8c564b",
     "full_ft": "#9467bd",
 }
 TRAINING_ORDER = ["pm=0", "pm=20", "rand100"]
@@ -63,13 +66,19 @@ PERTURB_ORDER = [0, 20, 50, 100, 200]
 
 
 def load_summary() -> pd.DataFrame:
-    df = pd.read_csv(INPUT_CSV)
+    df = pd.read_csv(INPUT_CSV, skipinitialspace=True)
+    df.columns = [str(col).strip() for col in df.columns]
     df = df.rename(
         columns={
             "dice_mean_seeds": "dice_mean",
             "dice_std_seeds": "dice_std",
         }
     )
+    df["training"] = df["training"].astype(str).str.strip().str.replace(
+        "pm = ", "pm=", regex=False
+    )
+    df["dataset"] = df["dataset"].astype(str).str.strip()
+    df["method"] = df["method"].astype(str).str.strip()
     df["perturb_max_px"] = df["perturb_max_px"].astype(int)
     df = df[df["method"].isin(METHOD_ORDER)].copy()
     return df
@@ -170,7 +179,7 @@ def plot_degradation_heatmap(df: pd.DataFrame) -> None:
                 aggfunc="first",
             )
             subset = subset.reindex(METHOD_ORDER)
-            subset = subset[PERTURB_ORDER]
+            subset = subset.reindex(columns=PERTURB_ORDER)
             image = ax.imshow(
                 subset.values,
                 cmap="RdYlGn",
@@ -211,7 +220,7 @@ def plot_degradation_heatmap(df: pd.DataFrame) -> None:
 
 def plot_performance_histograms(df: pd.DataFrame) -> None:
     tight = df[df["perturb_max_px"] == 0].copy()
-    fig, axes = plt.subplots(1, len(DATASET_ORDER), figsize=(20, 5), sharey=True)
+    fig, axes = plt.subplots(1, len(DATASET_ORDER), figsize=(22, 5), sharey=True)
     bar_width = 0.24
     x = np.arange(len(METHOD_ORDER))
 
