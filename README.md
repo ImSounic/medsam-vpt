@@ -108,10 +108,6 @@ the strongest parameter-efficient method on the far-OOD datasets.
 
 ![Degradation heatmap](figures/paper_visuals/degradation_heatmap.png)
 
-![Performance histograms](figures/paper_visuals/performance_histograms.png)
-
-
-
 ## Checkpoints Used
 
 Seed-0 checkpoints used for the main figures:
