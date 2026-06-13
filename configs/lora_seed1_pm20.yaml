@@ -1,15 +1,12 @@
-# LoRA with bbox jitter at training time.
-# Low-rank adapters (r=8) on attention qkv layers. Encoder base weights frozen.
-# Mirrors lora.yaml except for `bbox_perturb_pixels` and output paths.
 
 name: lora_seed1_pm20
 method: lora
 seed: 1
 
 method_kwargs:
-  rank: 8                  # ~24K LoRA params per block, 295K total
-  alpha: 16                # alpha = 2*rank
-  dropout: 0.0             # 0 for small datasets like ISIC
+  rank: 8
+  alpha: 16
+  dropout: 0.0
 
 model:
   arch: vit_b
@@ -18,17 +15,17 @@ model:
 
 data:
   root: data
-  bbox_perturb_pixels: 20  # +/-20 px jitter per bbox corner each step
+  bbox_perturb_pixels: 20
 
 train:
-  batch_size: 1            # fits 8 GB laptop and 16 GB T4/A16
+  batch_size: 1
   num_workers: 2
-  epochs: 6                # ~6 epochs is enough, like VPT
-  lr: 5.0e-4               # small param budget tolerates higher LR
+  epochs: 6
+  lr: 5.0e-4
   weight_decay: 0.0
   dice_weight: 0.5
   amp: true
-  cooldown_seconds: 60     # thermal pause, harmless on Colab/cluster
+  cooldown_seconds: 60
 
 eval:
   batch_size: 1

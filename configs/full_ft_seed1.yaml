@@ -1,6 +1,3 @@
-# Full fine-tuning: image encoder + mask decoder both trainable.
-# Memory-heavy. Designed to run on A16/T4 (16 GB) at batch=1.
-# Will OOM on 8 GB laptop; do not run locally.
 
 name: full_ft_seed1
 method: full_ft
@@ -16,14 +13,14 @@ data:
   bbox_perturb_pixels: 0
 
 train:
-  batch_size: 1            # full FT at 1024px needs all 16 GB of A16
+  batch_size: 1
   num_workers: 2
-  epochs: 6                # match other methods for fair comparison
-  lr: 1.0e-5               # 50x lower than PEFT, full FT needs gentler updates
-  weight_decay: 1.0e-4     # mild WD to limit encoder drift
+  epochs: 6
+  lr: 1.0e-5
+  weight_decay: 1.0e-4
   dice_weight: 0.5
   amp: true
-  cooldown_seconds: 60     # thermal pause
+  cooldown_seconds: 60
 
 eval:
   batch_size: 1

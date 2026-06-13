@@ -1,4 +1,3 @@
-# Encoder-only LoRA with random bbox jitter in [0, 100].
 
 name: lora_encoder_only_r28_all_seed2_rand100
 method: lora

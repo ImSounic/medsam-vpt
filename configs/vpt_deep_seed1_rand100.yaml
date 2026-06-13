@@ -1,13 +1,11 @@
-# VPT-deep with random bbox jitter [0, 100] per training step.
-# 10 prompts per transformer block + trainable mask decoder. Encoder weights frozen.
 
 name: vpt_deep_seed1_rand100
 method: vpt_deep
 seed: 1
 
 method_kwargs:
-  n_prompts: 10            # 12 * 10 * 768 = 92,160 prompt params
-  gradient_checkpointing: true   # needed for global attn at 4096 tokens, even on T4
+  n_prompts: 10
+  gradient_checkpointing: true
 
 model:
   arch: vit_b
@@ -16,11 +14,11 @@ model:
 
 data:
   root: data
-  bbox_perturb_pixels: 100  # upper bound of jitter range
-  random_perturb: true      # sample jitter from [0, 100] per step
+  bbox_perturb_pixels: 100
+  random_perturb: true
 
 train:
-  batch_size: 2            # A10 24 GB, encoder frozen, grad checkpointing on
+  batch_size: 2
   num_workers: 2
   epochs: 6
   lr: 5.0e-4
@@ -30,7 +28,7 @@ train:
   cooldown_seconds: 60
 
 eval:
-  batch_size: 2            # match train batch_size to avoid end-of-epoch spike
+  batch_size: 2
   num_workers: 2
 
 output:

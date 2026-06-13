@@ -1,14 +1,11 @@
-# VPT-deep with bbox jitter at training time.
-# 10 prompts per transformer block + trainable mask decoder. Encoder weights frozen.
-# Mirrors vpt_deep.yaml except for `bbox_perturb_pixels` and output paths.
 
 name: vpt_deep_seed0_pm20
 method: vpt_deep
 seed: 0
 
 method_kwargs:
-  n_prompts: 10            # 12 * 10 * 768 = 92,160 prompt params
-  gradient_checkpointing: true   # needed for global attn at 4096 tokens, even on T4
+  n_prompts: 10
+  gradient_checkpointing: true
 
 model:
   arch: vit_b
@@ -17,20 +14,20 @@ model:
 
 data:
   root: data
-  bbox_perturb_pixels: 20  # +/-20 px jitter per bbox corner each step
+  bbox_perturb_pixels: 20
 
 train:
-  batch_size: 1            # fits 8 GB laptop and 16 GB T4; use 2 only on >=24 GB
+  batch_size: 1
   num_workers: 2
-  epochs: 6                # VPT converges faster than decoder-only
+  epochs: 6
   lr: 5.0e-4
   weight_decay: 0.0
   dice_weight: 0.5
   amp: true
-  cooldown_seconds: 60     # 60s pause before val for laptop GPUs, harmless on Colab
+  cooldown_seconds: 60
 
 eval:
-  batch_size: 1            # match train batch_size to avoid end-of-epoch spike
+  batch_size: 1
   num_workers: 2
 
 output:

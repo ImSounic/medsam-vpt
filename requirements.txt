@@ -1,0 +1,12 @@
+black
+isort
+matplotlib
+monai
+numpy
+pandas
+Pillow
+PyYAML
+requests
+scipy
+git+https://github.com/facebookresearch/segment-anything.git
+tqdm

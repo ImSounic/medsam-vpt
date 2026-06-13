@@ -1,7 +1,3 @@
-# Decoder-only fine-tuning of MedSAM on ISIC 2018, WITH bbox jitter.
-# Image encoder frozen, mask decoder trainable.
-# Mirrors decoder_only.yaml except for bbox_perturb_pixels and output paths,
-# kept separate so the pm=0 and pm=20 checkpoints can coexist.
 
 name: decoder_only_seed0_pm20
 method: decoder_only
@@ -14,16 +10,16 @@ model:
 
 data:
   root: data
-  bbox_perturb_pixels: 20  # +/-20 px jitter per bbox corner each step
+  bbox_perturb_pixels: 20
 
 train:
-  batch_size: 2            # batch 2 at 1024px fits with frozen encoder
+  batch_size: 2
   num_workers: 2
-  epochs: 10               # ~3-4 h on RTX 1000; raise to 20 if val still improving
+  epochs: 10
   lr: 1.0e-4
   weight_decay: 0.0
-  dice_weight: 0.5         # 0.5*BCE + 0.5*Dice
-  amp: true                # mixed precision, big speedup
+  dice_weight: 0.5
+  amp: true
 
 eval:
   batch_size: 2

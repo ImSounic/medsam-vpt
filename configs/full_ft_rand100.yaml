@@ -1,6 +1,3 @@
-# Full fine-tuning with random bbox jitter [0, 100] per training step.
-# Image encoder + mask decoder both trainable.
-# Memory-heavy. batch=1 to stay safe on A10 / A16 (16-24 GB).
 
 name: full_ft_seed0_rand100
 method: full_ft
@@ -13,18 +10,18 @@ model:
 
 data:
   root: data
-  bbox_perturb_pixels: 100  # upper bound of jitter range
-  random_perturb: true      # sample jitter from [0, 100] per step
+  bbox_perturb_pixels: 100
+  random_perturb: true
 
 train:
-  batch_size: 1            # full FT trains 93M params, batch=2 risks OOM
+  batch_size: 1
   num_workers: 2
-  epochs: 6                # match other methods for fair comparison
-  lr: 1.0e-5               # 50x lower than PEFT, full FT needs gentler updates
-  weight_decay: 1.0e-4     # mild WD to limit encoder drift
+  epochs: 6
+  lr: 1.0e-5
+  weight_decay: 1.0e-4
   dice_weight: 0.5
   amp: true
-  cooldown_seconds: 60     # thermal pause
+  cooldown_seconds: 60
 
 eval:
   batch_size: 1

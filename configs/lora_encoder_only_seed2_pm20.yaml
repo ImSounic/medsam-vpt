@@ -1,4 +1,3 @@
-# Encoder-only LoRA with fixed bbox jitter at training time.
 
 name: lora_encoder_only_r28_all_seed2_pm20
 method: lora

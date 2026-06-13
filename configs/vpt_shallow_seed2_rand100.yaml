@@ -1,14 +1,11 @@
-# VPT-shallow with random bbox jitter [0, 100] per training step.
-# 10 prompts at encoder input + trainable mask decoder. Encoder weights frozen.
-# Each step samples its own jitter magnitude from uniform [0, 100] px.
 
 name: vpt_shallow_seed2_rand100
 method: vpt_shallow
 seed: 2
 
 method_kwargs:
-  n_prompts: 10            # 7,680 prompt + ~4M decoder params
-  gradient_checkpointing: true   # needed for global attn at 4096 tokens, even on T4
+  n_prompts: 10
+  gradient_checkpointing: true
 
 model:
   arch: vit_b
@@ -17,18 +14,18 @@ model:
 
 data:
   root: data
-  bbox_perturb_pixels: 100  # upper bound of jitter range
-  random_perturb: true      # sample jitter from [0, 100] per step
+  bbox_perturb_pixels: 100
+  random_perturb: true
 
 train:
-  batch_size: 1            # fits 8 GB laptop and 16 GB T4; use 2 only on >=24 GB
+  batch_size: 1
   num_workers: 2
-  epochs: 6                # VPT converges faster than decoder-only
-  lr: 5.0e-4               # higher LR than full FT, small param set
+  epochs: 6
+  lr: 5.0e-4
   weight_decay: 0.0
   dice_weight: 0.5
   amp: true
-  cooldown_seconds: 60     # 60s pause before val for laptop GPUs, harmless on Colab
+  cooldown_seconds: 60
 
 eval:
   batch_size: 1
