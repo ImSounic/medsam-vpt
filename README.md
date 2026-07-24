@@ -11,6 +11,15 @@ We study how MedSAM adaptation behaves under domain shift and bounding-box
 prompt noise. The comparison covers zero-shot MedSAM, decoder-only fine-tuning,
 VPT-shallow, VPT-deep, LoRA, encoder-only LoRA, and full fine-tuning.
 
+## Citation
+
+@InProceedings{Akkaraju_2026_SAFER,
+    author    = {Akkaraju, Sounic and Haralovi{\'c}, Marko and Baretta, Carlo and Zapryanov, Vasil and Briassouli, Alexia},
+    title     = {When Adaptation Hurts: Connecting Representational Drift to OOD Failures in MedSAM Fine-Tuning},
+    booktitle = {Proceedings of the MICCAI Workshop on Stable Adaptation and Faithful Evaluation of Reasoning in Medical Foundation Models},
+    year      = {2026}
+}
+
 ## Setup
 
 ```bash
