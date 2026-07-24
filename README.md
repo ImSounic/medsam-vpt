@@ -13,12 +13,14 @@ VPT-shallow, VPT-deep, LoRA, encoder-only LoRA, and full fine-tuning.
 
 ## Citation
 
+```bibtex
 @InProceedings{Akkaraju_2026_SAFER,
     author    = {Akkaraju, Sounic and Haralovi{\'c}, Marko and Baretta, Carlo and Zapryanov, Vasil and Briassouli, Alexia},
     title     = {When Adaptation Hurts: Connecting Representational Drift to OOD Failures in MedSAM Fine-Tuning},
     booktitle = {Proceedings of the MICCAI Workshop on Stable Adaptation and Faithful Evaluation of Reasoning in Medical Foundation Models},
     year      = {2026}
 }
+```
 
 ## Setup
 
