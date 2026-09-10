@@ -16,6 +16,7 @@ source /software/anaconda3/2025.06/etc/profile.d/conda.sh
 conda activate medsam-vpt
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export LANG=en_US.UTF-8
+export PYTHONUNBUFFERED=1   # stream [train] prints into the .out log
 
 python scripts/eval_all_checkpoints.py \
   --config configs/accv_eval.yaml \
