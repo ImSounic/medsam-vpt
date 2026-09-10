@@ -7,6 +7,7 @@ import csv
 import random
 import time
 from datetime import datetime
+from itertools import islice
 from pathlib import Path
 
 import numpy as np
@@ -36,6 +37,12 @@ from src.losses import DiceBCELoss
 from src.metrics import aggregate_metrics, dice_score, iou_score
 from src.models.medsam import load_medsam
 from src.models.methods import encoder_in_grad_path, setup_method
+from src.train_schedule import (
+    apply_quick_overrides,
+    cycle_loader,
+    plan_segments,
+    resolve_budget,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -50,6 +57,11 @@ def parse_args() -> argparse.Namespace:
         "--resume",
         action="store_true",
         help="Resume from latest.pth in the run directory if present.",
+    )
+    p.add_argument(
+        "--quick",
+        action="store_true",
+        help="Smoke test: 8 train / 4 val images, 1 epoch or 6 steps, tiny CKA probe.",
     )
     return p.parse_args()
 
@@ -70,10 +82,17 @@ def forward_with_prompt(
     images: torch.Tensor,
     bboxes: torch.Tensor,
     encoder_grad: bool,
+    grad_checkpoint: bool = False,
 ) -> torch.Tensor:
     """Run MedSAM forward with bbox prompts. Returns logits (B, 1, H, W)."""
     if encoder_grad:
-        image_emb = sam.image_encoder(images)
+        if grad_checkpoint:
+            # Per-block checkpointing on the encoder (same maths, less memory).
+            from cka.probe import _encoder_forward_checkpointed
+
+            image_emb = _encoder_forward_checkpointed(sam.image_encoder, images)
+        else:
+            image_emb = sam.image_encoder(images)
     else:
         with torch.no_grad():
             image_emb = sam.image_encoder(images)
@@ -109,6 +128,9 @@ def train_one_epoch(
     encoder_grad: bool,
     amp: bool,
     cka_ctx: dict | None = None,
+    max_steps: int | None = None,
+    step_scheduler=None,
+    grad_checkpoint: bool = False,
 ) -> dict:
     sam.train()
     losses, bces, dlosses, cka_losses = [], [], [], []
@@ -116,7 +138,9 @@ def train_one_epoch(
         {n: [] for n in cka_ctx["base_acts"]} if cka_ctx else {}
     )
     cka_every_n = cka_ctx["every_n_steps"] if cka_ctx else 1
-    pbar = tqdm(loader, desc="train", leave=False)
+    batches = islice(loader, max_steps) if max_steps is not None else loader
+    total = max_steps if max_steps is not None else len(loader)
+    pbar = tqdm(batches, desc="train", leave=False, total=total)
     for step_idx, batch in enumerate(pbar):
         images = batch["image"].to(device, non_blocking=True)
         masks = batch["mask"].to(device, non_blocking=True)
@@ -125,7 +149,13 @@ def train_one_epoch(
         optimizer.zero_grad(set_to_none=True)
 
         with torch.autocast(device_type=_AUTOCAST_DEVICE, enabled=amp):
-            logits = forward_with_prompt(sam, images, bboxes, encoder_grad=encoder_grad)
+            logits = forward_with_prompt(
+                sam,
+                images,
+                bboxes,
+                encoder_grad=encoder_grad,
+                grad_checkpoint=grad_checkpoint,
+            )
             task_loss, parts = criterion(logits, masks)
 
         task_loss_val = float(task_loss.detach().item())
@@ -189,6 +219,8 @@ def train_one_epoch(
             scaler.update()
         else:
             optimizer.step()
+        if step_scheduler is not None:
+            step_scheduler()
 
         total_loss_val = task_loss_val + (
             float(cka_ctx["lambda_cka"]) * cka_loss_val
@@ -254,6 +286,7 @@ def save_checkpoint(
     optimizer=None,
     scheduler=None,
     best_val: float | None = None,
+    step: int = 0,
 ) -> None:
     """Save trainable params, optionally optimizer/scheduler state for resume."""
     trainable_state = {
@@ -263,6 +296,7 @@ def save_checkpoint(
     }
     payload = {
         "epoch": epoch,
+        "step": step,
         "method": cfg["method"],
         "val_dice": val_dice,
         "best_val": best_val if best_val is not None else val_dice,
@@ -281,6 +315,9 @@ def save_checkpoint(
 def main() -> int:
     args = parse_args()
     cfg = load_config(args.config)
+    if args.quick:
+        apply_quick_overrides(cfg)
+        print("[train] --quick: tiny data, budget and probe")
     seed = args.seed if args.seed is not None else cfg.get("seed", 0)
     set_seed(seed)
 
@@ -309,6 +346,7 @@ def main() -> int:
     )
 
     enc_grad = encoder_in_grad_path(method)
+    grad_ckpt = bool(cfg["train"].get("grad_checkpoint", False))
 
     # Data
     image_size = cfg["model"]["image_size"]
@@ -327,6 +365,9 @@ def main() -> int:
         image_size=image_size,
         bbox_perturb_pixels=0,
     )
+    if args.quick:
+        train_ds.items = train_ds.items[:8]
+        val_ds.items = val_ds.items[:4]
     print(
         f"[train] train_n={len(train_ds)} val_n={len(val_ds)} image_size={image_size}"
     )
@@ -366,12 +407,26 @@ def main() -> int:
         lr=float(cfg["train"]["lr"]),
         weight_decay=float(cfg["train"].get("weight_decay", 0.0)),
     )
-    epochs = int(cfg["train"]["epochs"])
-    scheduler = CosineAnnealingLR(optimizer, T_max=epochs)
+    budget = resolve_budget(cfg["train"])
+    if budget.mode == "steps":
+        scheduler = CosineAnnealingLR(optimizer, T_max=budget.max_steps)
+        segments = plan_segments(budget.max_steps, budget.val_every_steps)
+        per_step_sched = scheduler.step
+        seg_label = "seg"
+    else:
+        scheduler = CosineAnnealingLR(optimizer, T_max=budget.n_segments)
+        segments = [len(train_loader)] * budget.n_segments
+        per_step_sched = None
+        seg_label = "ep"
+    n_segments = len(segments)
+    stream = cycle_loader(train_loader)
 
     amp = bool(cfg["train"].get("amp", True)) and supports_amp(device)
     scaler = torch.amp.GradScaler() if amp else None
-    print(f"[train] amp={amp} epochs={epochs} batch={cfg['train']['batch_size']}")
+    print(
+        f"[train] amp={amp} mode={budget.mode} segments={n_segments} "
+        f"max_steps={budget.max_steps} batch={cfg['train']['batch_size']}"
+    )
 
     criterion = DiceBCELoss(dice_weight=float(cfg["train"].get("dice_weight", 0.5)))
 
@@ -446,6 +501,7 @@ def main() -> int:
     log_w = csv.writer(log_fh)
     log_header = [
         "epoch",
+        "step",
         "train_loss",
         "train_bce",
         "train_dice_loss",
@@ -464,7 +520,8 @@ def main() -> int:
     reset_peak_memory(device)
 
     best_val = 0.0
-    start_epoch = 1
+    start_segment = 1
+    global_step = 0
     latest_path = run_dir / "latest.pth"
     if args.resume and latest_path.exists():
         ckpt = torch.load(latest_path, map_location="cpu", weights_only=False)
@@ -472,25 +529,29 @@ def main() -> int:
         sam.load_state_dict(trainable_state, strict=False)
         if "optimizer" in ckpt:
             optimizer.load_state_dict(ckpt["optimizer"])
-        completed_epochs = int(ckpt["epoch"])
-        for _ in range(completed_epochs):
+        completed = int(ckpt["epoch"])
+        global_step = int(ckpt.get("step", 0))
+        n_sched = global_step if budget.mode == "steps" else completed
+        for _ in range(n_sched):
             scheduler.step()
-        start_epoch = completed_epochs + 1
+        start_segment = completed + 1
         best_val = float(ckpt.get("best_val", ckpt.get("val_dice", 0.0)))
         cur_lr = scheduler.get_last_lr()[0]
         print(
             f"[train] resumed from {latest_path} "
-            f"(completed epoch {completed_epochs}, best_val={best_val:.4f}). "
-            f"Continuing at epoch {start_epoch} with lr={cur_lr:.2e}."
+            f"(completed {seg_label} {completed}, step {global_step}, "
+            f"best_val={best_val:.4f}). Continuing at {seg_label} {start_segment} "
+            f"with lr={cur_lr:.2e}."
         )
 
     t_total = time.time()
     cooldown_s = float(cfg["train"].get("cooldown_seconds", 0))
-    for epoch in range(start_epoch, epochs + 1):
+    for seg in range(start_segment, n_segments + 1):
+        n_steps = segments[seg - 1]
         t0 = time.time()
         train_stats = train_one_epoch(
             sam,
-            train_loader,
+            stream,
             optimizer,
             scaler,
             criterion,
@@ -498,7 +559,11 @@ def main() -> int:
             encoder_grad=enc_grad,
             amp=amp,
             cka_ctx=cka_ctx,
+            max_steps=n_steps,
+            step_scheduler=per_step_sched,
+            grad_checkpoint=grad_ckpt,
         )
+        global_step += n_steps
         if cooldown_s > 0:
             print(f"[train] cooldown {cooldown_s:.0f}s before val")
             synchronize(device)
@@ -508,19 +573,21 @@ def main() -> int:
             gc.collect()
             time.sleep(cooldown_s)
         val_stats = validate(sam, val_loader, device, amp=amp)
-        scheduler.step()
+        if per_step_sched is None:
+            scheduler.step()
         elapsed = time.time() - t0
         cur_lr = scheduler.get_last_lr()[0]
 
         val_dice = val_stats["dice_mean"]
         print(
-            f"[train] ep {epoch:3d}/{epochs} "
+            f"[train] {seg_label} {seg:3d}/{n_segments} step={global_step} "
             f"loss={train_stats['loss']:.4f} "
             f"val_dice={val_dice:.4f} val_iou={val_stats['iou_mean']:.4f} "
             f"lr={cur_lr:.2e} t={elapsed:.0f}s"
         )
         row = [
-            epoch,
+            seg,
+            global_step,
             f"{train_stats['loss']:.4f}",
             f"{train_stats['bce']:.4f}",
             f"{train_stats['dice_loss']:.4f}",
@@ -540,18 +607,25 @@ def main() -> int:
         if val_dice > best_val:
             best_val = val_dice
             save_checkpoint(
-                sam, run_dir / "best.pth", epoch, val_dice, cfg, best_val=best_val
+                sam,
+                run_dir / "best.pth",
+                seg,
+                val_dice,
+                cfg,
+                best_val=best_val,
+                step=global_step,
             )
             print(f"[train]   new best val_dice={best_val:.4f}")
         save_checkpoint(
             sam,
             run_dir / "latest.pth",
-            epoch,
+            seg,
             val_dice,
             cfg,
             optimizer=optimizer,
             scheduler=scheduler,
             best_val=best_val,
+            step=global_step,
         )
 
     log_fh.close()
