@@ -467,7 +467,12 @@ def main() -> int:
         )
         for p in base_for_probe.parameters():
             p.requires_grad = False
-        base_acts = cache_base_activations(base_for_probe, probe_batch, layer_names)
+        base_acts = cache_base_activations(
+            base_for_probe,
+            probe_batch,
+            layer_names,
+            encoder_chunk=int(cka_cfg.get("encoder_chunk", 4)),
+        )
         print(
             f"[train][cka] base activations cached: "
             f"{ {n: tuple(a.shape) for n, a in base_acts.items()} }"

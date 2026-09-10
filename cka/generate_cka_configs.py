@@ -19,6 +19,106 @@ POSITION_WEIGHTS = {
               "decoder_mask_logits": 1.0},
 }
 
+# ACCV 2026 TrustFMI (spec section 4.2): encoder-hook ablation positions.
+POSITION_LAYERS["enc"] = ["encoder_neck", "encoder_block_10", "encoder_block_11"]
+POSITION_LAYERS["both"] = POSITION_LAYERS["late"] + POSITION_LAYERS["enc"]
+POSITION_WEIGHTS["enc"] = {"encoder_neck": 1.0, "encoder_block_10": 1.0, "encoder_block_11": 1.0}
+POSITION_WEIGHTS["both"] = {**POSITION_WEIGHTS["late"], **POSITION_WEIGHTS["enc"]}
+
+# OOD-only probe (0 ISIC + 16 BUSI + 16 CBIS), lambda 10. The first two runs
+# already exist on the HPC and are listed so their configs live in git; the
+# remaining four are the new T1 array.
+ACCV_RUNS = [
+    {"name": "lora_cka_oodonly_late_l10_seed0", "position": "late", "seed": 0,
+     "perturb": 0, "checkpoint_dir": "checkpoints/runs_cka_oodonly_late"},
+    {"name": "lora_cka_oodonly_late_l10_pm20_seed0", "position": "late", "seed": 0,
+     "perturb": 20, "checkpoint_dir": "checkpoints/runs_cka_oodonly_late_pm20"},
+    {"name": "lora_cka_oodonly_late_l10_pm20_seed1", "position": "late", "seed": 1,
+     "perturb": 20, "checkpoint_dir": "checkpoints/runs_accv_t1"},
+    {"name": "lora_cka_oodonly_late_l10_pm20_seed2", "position": "late", "seed": 2,
+     "perturb": 20, "checkpoint_dir": "checkpoints/runs_accv_t1"},
+    {"name": "lora_cka_oodonly_enc_l10_pm20_seed0", "position": "enc", "seed": 0,
+     "perturb": 20, "checkpoint_dir": "checkpoints/runs_accv_t1"},
+    {"name": "lora_cka_oodonly_both_l10_pm20_seed0", "position": "both", "seed": 0,
+     "perturb": 20, "checkpoint_dir": "checkpoints/runs_accv_t1"},
+]
+
+ACCV_TEMPLATE = """# LoRA + CKA (OOD-only probe), ACCV TrustFMI; position={position} lambda=10 seed={seed} pm={perturb}
+
+name: {run_name}
+method: lora
+seed: {seed}
+
+method_kwargs:
+  rank: 8
+  alpha: 16
+  dropout: 0.0
+
+model:
+  arch: vit_b
+  checkpoint: checkpoints/medsam_vit_b.pth
+  image_size: 1024
+
+data:
+  root: data
+  bbox_perturb_pixels: {perturb}
+
+train:
+  batch_size: 1
+  num_workers: 8
+  epochs: 6
+  lr: 5.0e-4
+  weight_decay: 0.0
+  dice_weight: 0.5
+  amp: true
+  cooldown_seconds: 0
+
+eval:
+  batch_size: 1
+  num_workers: 4
+
+cka_regularization:
+  enabled: true
+  lambda: 10.0
+  probe_seed: 42
+  n_isic: 0
+  n_busi: 16
+  n_cbis: 16
+  encoder_chunk: 8               # L40S 48 GB
+  use_grad_checkpoint: true
+  every_n_steps: 4
+  hook_layers:
+{hook_layers_yaml}
+  weights:
+{weights_yaml}
+
+output:
+  checkpoint_dir: {checkpoint_dir}
+"""
+
+
+def emit_accv_configs(out_dir: Path = CONFIGS_DIR) -> list[Path]:
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    written = []
+    for run in ACCV_RUNS:
+        layers = POSITION_LAYERS[run["position"]]
+        weights = POSITION_WEIGHTS[run["position"]]
+        text = ACCV_TEMPLATE.format(
+            position=run["position"],
+            seed=run["seed"],
+            perturb=run["perturb"],
+            run_name=run["name"],
+            hook_layers_yaml="\n".join(f"    - {layer}" for layer in layers),
+            weights_yaml="\n".join(f"    {k}: {v}" for k, v in weights.items()),
+            checkpoint_dir=run["checkpoint_dir"],
+        )
+        p = out_dir / f"{run['name']}.yaml"
+        p.write_text(text)
+        written.append(p)
+    return written
+
+
 # Lambda values to sweep; the string suffix is used in filenames and run names.
 LAMBDAS = [
     ("01",  0.1),
@@ -103,18 +203,25 @@ def emit_config(position: str, lambda_str: str, lambda_val: float) -> Path:
     return out_path
 
 
-def main() -> int:
-    print("[gen-cka-configs] generating 9 LoRA + CKA configs (3 positions x 3 lambdas)")
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--out-dir", type=Path, default=CONFIGS_DIR)
+    ap.add_argument("--accv-only", action="store_true", help="Skip the original 9-config sweep")
+    args = ap.parse_args(argv)
+
     written = []
-    for position in ("early", "mid", "late"):
-        for lambda_str, lambda_val in LAMBDAS:
-            p = emit_config(position, lambda_str, lambda_val)
-            written.append(p)
-            print(f"  wrote {p.name}")
-    print(f"\n[gen-cka-configs] done: {len(written)} configs in {CONFIGS_DIR}")
-    print("\nNext steps:")
-    print("  1. Commit + push the 9 new configs")
-    print("  2. On JupyterLab: pull, then `nohup bash cka/run_cka_sweep.sh > cka_sweep.log 2>&1 &`")
+    if not args.accv_only:
+        print("[gen-cka-configs] original sweep: 9 configs (3 positions x 3 lambdas)")
+        for position in ("early", "mid", "late"):
+            for lambda_str, lambda_val in LAMBDAS:
+                written.append(emit_config(position, lambda_str, lambda_val))
+    print("[gen-cka-configs] ACCV T1 set: 6 configs")
+    written.extend(emit_accv_configs(args.out_dir))
+    for p in written:
+        print(f"  wrote {p.name}")
+    print(f"[gen-cka-configs] done: {len(written)} configs")
     return 0
 
 

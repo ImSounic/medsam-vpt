@@ -1,0 +1,61 @@
+# LoRA + CKA (OOD-only probe), ACCV TrustFMI; position=both lambda=10 seed=0 pm=20
+
+name: lora_cka_oodonly_both_l10_pm20_seed0
+method: lora
+seed: 0
+
+method_kwargs:
+  rank: 8
+  alpha: 16
+  dropout: 0.0
+
+model:
+  arch: vit_b
+  checkpoint: checkpoints/medsam_vit_b.pth
+  image_size: 1024
+
+data:
+  root: data
+  bbox_perturb_pixels: 20
+
+train:
+  batch_size: 1
+  num_workers: 8
+  epochs: 6
+  lr: 5.0e-4
+  weight_decay: 0.0
+  dice_weight: 0.5
+  amp: true
+  cooldown_seconds: 0
+
+eval:
+  batch_size: 1
+  num_workers: 4
+
+cka_regularization:
+  enabled: true
+  lambda: 10.0
+  probe_seed: 42
+  n_isic: 0
+  n_busi: 16
+  n_cbis: 16
+  encoder_chunk: 8               # L40S 48 GB
+  use_grad_checkpoint: true
+  every_n_steps: 4
+  hook_layers:
+    - decoder_upscaling
+    - decoder_iou_head
+    - decoder_mask_logits
+    - encoder_neck
+    - encoder_block_10
+    - encoder_block_11
+  weights:
+    decoder_upscaling: 0.8
+    decoder_iou_head: 1.5
+    decoder_mask_logits: 1.0
+    encoder_neck: 1.0
+    encoder_block_10: 1.0
+    encoder_block_11: 1.0
+
+output:
+  checkpoint_dir: checkpoints/runs_accv_t1
