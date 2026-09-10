@@ -160,7 +160,9 @@ def make_figure(
         for k, det in enumerate(detectors):
             vals = []
             for r in runs:
-                cell = sub[(sub.run_name == r) & (sub.dataset == ds) & (sub.detector == det)]
+                cell = sub[
+                    (sub.run_name == r) & (sub.dataset == ds) & (sub.detector == det)
+                ]
                 vals.append(float(cell.auroc.iloc[0]) if len(cell) else np.nan)
             ax.bar(x + (k - (len(detectors) - 1) / 2) * width, vals, width, label=det)
         ax.axhline(0.5, color="grey", lw=0.8, ls="--")
@@ -187,14 +189,18 @@ def make_figure(
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--raw-dir", type=Path, default=REPO_ROOT / "results/accv/raw")
-    ap.add_argument("--runs", nargs="*", default=None, help="Run names (default: discover)")
+    ap.add_argument(
+        "--runs", nargs="*", default=None, help="Run names (default: discover)"
+    )
     ap.add_argument("--datasets", nargs="*", default=DATASETS)
     ap.add_argument("--thresholds", nargs="*", type=float, default=[0.5, 0.7])
     ap.add_argument(
         "--out-dir", type=Path, default=REPO_ROOT / "results/accv/failure_detection"
     )
     ap.add_argument("--figure", type=Path, default=None)
-    ap.add_argument("--scatter-run", default=None, help="Run for the iou_pred vs Dice scatter")
+    ap.add_argument(
+        "--scatter-run", default=None, help="Run for the iou_pred vs Dice scatter"
+    )
     args = ap.parse_args(argv)
 
     raw_dir = args.raw_dir if args.raw_dir.is_absolute() else REPO_ROOT / args.raw_dir
@@ -223,14 +229,17 @@ def main(argv: list[str] | None = None) -> int:
     primary = table[table.threshold == args.thresholds[0]]
     print(f"AUROC, failure = Dice < {args.thresholds[0]}")
     print(
-        primary.pivot_table(index=["run_name", "dataset"], columns="detector", values="auroc")
+        primary.pivot_table(
+            index=["run_name", "dataset"], columns="detector", values="auroc"
+        )
         .round(3)
         .to_string()
     )
     print("\nn_fail / n per run and dataset")
     print(
-        primary[primary.detector == "iou_pred"][["run_name", "dataset", "n_fail", "n"]]
-        .to_string(index=False)
+        primary[primary.detector == "iou_pred"][
+            ["run_name", "dataset", "n_fail", "n"]
+        ].to_string(index=False)
     )
     print("\niou_pred calibration (ECE, 10 bins)")
     print(calib.round(3).to_string(index=False))

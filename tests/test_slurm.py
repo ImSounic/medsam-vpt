@@ -38,14 +38,23 @@ def test_t3_array_covers_two_prompt_levels():
     text = (SLURM / "accv_t3.sbatch").read_text()
     assert _bash_array(text, "PERTURBS") == ["0", "50"]
     assert _array_len(text) == 2
-    assert len(_bash_array(text, "CHECKPOINTS")) == 6  # plus zero-shot handled separately
+    assert (
+        len(_bash_array(text, "CHECKPOINTS")) == 6
+    )  # plus zero-shot handled separately
     assert "--drift" in text
 
 
 @pytest.mark.parametrize(
     "script",
-    ["accv_t1.sbatch", "accv_t1_eval.sbatch", "accv_t2.sbatch", "accv_t2_eval.sbatch",
-     "accv_t3.sbatch", "submit_accv.sh", "sync_to_hpc.sh"],
+    [
+        "accv_t1.sbatch",
+        "accv_t1_eval.sbatch",
+        "accv_t2.sbatch",
+        "accv_t2_eval.sbatch",
+        "accv_t3.sbatch",
+        "submit_accv.sh",
+        "sync_to_hpc.sh",
+    ],
 )
 def test_bash_syntax(script):
     subprocess.run(["bash", "-n", str(SLURM / script)], check=True)

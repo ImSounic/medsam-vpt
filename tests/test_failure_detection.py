@@ -44,15 +44,29 @@ def test_build_table_from_per_image_csvs(tmp_path):
     rows = []
     for i in range(40):
         dice = float(rng.uniform(0.1, 1.0))
-        rows.append({
-            "image_id": f"img{i}", "dice": dice, "iou": dice / (2 - dice), "hd95": 5.0,
-            "iou_pred": dice + rng.normal(0, 0.05),
-            "drift": (1 - dice) + rng.normal(0, 0.05),
-        })
+        rows.append(
+            {
+                "image_id": f"img{i}",
+                "dice": dice,
+                "iou": dice / (2 - dice),
+                "hd95": 5.0,
+                "iou_pred": dice + rng.normal(0, 0.05),
+                "drift": (1 - dice) + rng.normal(0, 0.05),
+            }
+        )
     _write(tmp_path / "lora_seed0_cbis_ddsm_per_image.csv", rows)
     df = load_per_image(tmp_path, "lora_seed0", "cbis_ddsm")
     table = build_table({("lora_seed0", "cbis_ddsm"): df}, thresholds=(0.5, 0.7))
-    assert {"run_name", "dataset", "detector", "threshold", "auroc", "auprc", "n", "n_fail"} <= set(table.columns)
+    assert {
+        "run_name",
+        "dataset",
+        "detector",
+        "threshold",
+        "auroc",
+        "auprc",
+        "n",
+        "n_fail",
+    } <= set(table.columns)
     sub = table[(table.threshold == 0.5)]
     assert set(sub.detector) == {"iou_pred", "drift"}
     assert (sub.auroc > 0.9).all()

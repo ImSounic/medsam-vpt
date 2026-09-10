@@ -1,4 +1,5 @@
 """Forward hooks capturing decoder layer activations for CKA; detach frozen base, keep grads on trainable model."""
+
 from __future__ import annotations
 
 from typing import Iterable
@@ -88,6 +89,7 @@ class HookHandle:
                 self._accum[name].append(t)
             else:
                 self.activations[name] = t
+
         return _hook
 
     def clear(self) -> None:
@@ -100,7 +102,9 @@ class HookHandle:
     def stacked(self) -> dict[str, torch.Tensor]:
         """Accumulate mode: name -> tensor concatenated along dim 0."""
         if not self._accumulate:
-            raise RuntimeError("stacked() requires accumulate=True; use .activations instead")
+            raise RuntimeError(
+                "stacked() requires accumulate=True; use .activations instead"
+            )
         out = {}
         for name, parts in self._accum.items():
             if not parts:

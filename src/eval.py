@@ -24,9 +24,9 @@ from src.device_utils import (
     peak_memory_mb,
     reset_peak_memory,
 )
+from src.drift import decoder_drift
 from src.metrics import aggregate_metrics, dice_score, hd95, iou_score
 from src.models.medsam import load_medsam
-from src.drift import decoder_drift
 from src.models.methods import encoder_in_grad_path, setup_method
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -51,7 +51,10 @@ def parse_args() -> argparse.Namespace:
         "(1 - CKA of the upscaled mask embedding).",
     )
     p.add_argument(
-        "--bbox-perturb", type=int, default=None, help="Override eval.bbox_perturb_pixels"
+        "--bbox-perturb",
+        type=int,
+        default=None,
+        help="Override eval.bbox_perturb_pixels",
     )
     p.add_argument(
         "--results-csv", type=Path, default=None, help="Override output.results_csv"
@@ -152,7 +155,9 @@ def write_per_image_csv(path: Path, rows: list[dict]) -> Path:
     """Columns follow the first row's keys (image_id, dice, iou, hd95, iou_pred[, drift])."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = (
-        list(rows[0].keys()) if rows else ["image_id", "dice", "iou", "hd95", "iou_pred"]
+        list(rows[0].keys())
+        if rows
+        else ["image_id", "dice", "iou", "hd95", "iou_pred"]
     )
     with open(path, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fieldnames)

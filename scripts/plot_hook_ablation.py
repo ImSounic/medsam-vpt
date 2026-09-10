@@ -16,8 +16,15 @@ if str(REPO_ROOT) not in sys.path:
 
 FAR_OOD = ["busi", "cbis_ddsm"]
 ORDER = ["no_cka", "late", "enc", "both"]
-LABELS = {"no_cka": "no CKA", "late": "decoder hooks", "enc": "encoder hooks", "both": "both"}
-_POS_RE = re.compile(r"^lora_cka_oodonly_(?P<pos>late|enc|both)_l10_pm20_seed(?P<seed>\d+)$")
+LABELS = {
+    "no_cka": "no CKA",
+    "late": "decoder hooks",
+    "enc": "encoder hooks",
+    "both": "both",
+}
+_POS_RE = re.compile(
+    r"^lora_cka_oodonly_(?P<pos>late|enc|both)_l10_pm20_seed(?P<seed>\d+)$"
+)
 
 
 def parse_position(run_name: str) -> str | None:
@@ -34,15 +41,23 @@ def ablation_table(csv: Path, baseline_csv: Path, baseline_run: str) -> pd.DataF
     base["position"] = "no_cka"
     both = pd.concat([base, df], ignore_index=True)
     both = both[both.dataset.isin(FAR_OOD)]
-    return both.pivot_table(index="position", columns="dataset", values="dice_mean").reindex(ORDER)
+    return both.pivot_table(
+        index="position", columns="dataset", values="dice_mean"
+    ).reindex(ORDER)
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--csv", type=Path, default=REPO_ROOT / "cka/results/runs_accv_t1.csv")
-    ap.add_argument("--baseline-csv", type=Path, default=REPO_ROOT / "results/runs_pm20.csv")
+    ap.add_argument(
+        "--csv", type=Path, default=REPO_ROOT / "cka/results/runs_accv_t1.csv"
+    )
+    ap.add_argument(
+        "--baseline-csv", type=Path, default=REPO_ROOT / "results/runs_pm20.csv"
+    )
     ap.add_argument("--baseline-run", default="lora_seed0_pm20")
-    ap.add_argument("--out", type=Path, default=REPO_ROOT / "figures/accv/hook_ablation.png")
+    ap.add_argument(
+        "--out", type=Path, default=REPO_ROOT / "figures/accv/hook_ablation.png"
+    )
     args = ap.parse_args(argv)
 
     table = ablation_table(args.csv, args.baseline_csv, args.baseline_run)

@@ -11,7 +11,9 @@ def _decoder_trainable(sam) -> int:
 
 def test_encoder_only_freezes_decoder(make_sam):
     sam = make_sam()
-    info = setup_method(sam, "lora_encoder_only", rank=28, alpha=56, target_modules="all")
+    info = setup_method(
+        sam, "lora_encoder_only", rank=28, alpha=56, target_modules="all"
+    )
     assert _decoder_trainable(sam) == 0
     assert info["trainable"] > 0
 

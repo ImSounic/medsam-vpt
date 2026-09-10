@@ -1,4 +1,5 @@
 """Generate 9 LoRA + CKA configs: 3 positions x 3 lambdas x seed 0."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,39 +9,76 @@ CONFIGS_DIR = REPO_ROOT / "configs"
 
 POSITION_LAYERS = {
     "early": ["decoder_transformer"],
-    "mid":   ["decoder_transformer", "decoder_upscaling"],
-    "late":  ["decoder_upscaling", "decoder_iou_head", "decoder_mask_logits"],
+    "mid": ["decoder_transformer", "decoder_upscaling"],
+    "late": ["decoder_upscaling", "decoder_iou_head", "decoder_mask_logits"],
 }
 # Per-layer weight in the CKA loss sum; higher where the paper's correlation is stronger.
 POSITION_WEIGHTS = {
     "early": {"decoder_transformer": 1.0},
-    "mid":   {"decoder_transformer": 1.0, "decoder_upscaling": 0.8},
-    "late":  {"decoder_upscaling": 0.8, "decoder_iou_head": 1.5,
-              "decoder_mask_logits": 1.0},
+    "mid": {"decoder_transformer": 1.0, "decoder_upscaling": 0.8},
+    "late": {
+        "decoder_upscaling": 0.8,
+        "decoder_iou_head": 1.5,
+        "decoder_mask_logits": 1.0,
+    },
 }
 
 # ACCV 2026 TrustFMI (spec section 4.2): encoder-hook ablation positions.
 POSITION_LAYERS["enc"] = ["encoder_neck", "encoder_block_10", "encoder_block_11"]
 POSITION_LAYERS["both"] = POSITION_LAYERS["late"] + POSITION_LAYERS["enc"]
-POSITION_WEIGHTS["enc"] = {"encoder_neck": 1.0, "encoder_block_10": 1.0, "encoder_block_11": 1.0}
+POSITION_WEIGHTS["enc"] = {
+    "encoder_neck": 1.0,
+    "encoder_block_10": 1.0,
+    "encoder_block_11": 1.0,
+}
 POSITION_WEIGHTS["both"] = {**POSITION_WEIGHTS["late"], **POSITION_WEIGHTS["enc"]}
 
 # OOD-only probe (0 ISIC + 16 BUSI + 16 CBIS), lambda 10. The first two runs
 # already exist on the HPC and are listed so their configs live in git; the
 # remaining four are the new T1 array.
 ACCV_RUNS = [
-    {"name": "lora_cka_oodonly_late_l10_seed0", "position": "late", "seed": 0,
-     "perturb": 0, "checkpoint_dir": "checkpoints/runs_cka_oodonly_late"},
-    {"name": "lora_cka_oodonly_late_l10_pm20_seed0", "position": "late", "seed": 0,
-     "perturb": 20, "checkpoint_dir": "checkpoints/runs_cka_oodonly_late_pm20"},
-    {"name": "lora_cka_oodonly_late_l10_pm20_seed1", "position": "late", "seed": 1,
-     "perturb": 20, "checkpoint_dir": "checkpoints/runs_accv_t1"},
-    {"name": "lora_cka_oodonly_late_l10_pm20_seed2", "position": "late", "seed": 2,
-     "perturb": 20, "checkpoint_dir": "checkpoints/runs_accv_t1"},
-    {"name": "lora_cka_oodonly_enc_l10_pm20_seed0", "position": "enc", "seed": 0,
-     "perturb": 20, "checkpoint_dir": "checkpoints/runs_accv_t1"},
-    {"name": "lora_cka_oodonly_both_l10_pm20_seed0", "position": "both", "seed": 0,
-     "perturb": 20, "checkpoint_dir": "checkpoints/runs_accv_t1"},
+    {
+        "name": "lora_cka_oodonly_late_l10_seed0",
+        "position": "late",
+        "seed": 0,
+        "perturb": 0,
+        "checkpoint_dir": "checkpoints/runs_cka_oodonly_late",
+    },
+    {
+        "name": "lora_cka_oodonly_late_l10_pm20_seed0",
+        "position": "late",
+        "seed": 0,
+        "perturb": 20,
+        "checkpoint_dir": "checkpoints/runs_cka_oodonly_late_pm20",
+    },
+    {
+        "name": "lora_cka_oodonly_late_l10_pm20_seed1",
+        "position": "late",
+        "seed": 1,
+        "perturb": 20,
+        "checkpoint_dir": "checkpoints/runs_accv_t1",
+    },
+    {
+        "name": "lora_cka_oodonly_late_l10_pm20_seed2",
+        "position": "late",
+        "seed": 2,
+        "perturb": 20,
+        "checkpoint_dir": "checkpoints/runs_accv_t1",
+    },
+    {
+        "name": "lora_cka_oodonly_enc_l10_pm20_seed0",
+        "position": "enc",
+        "seed": 0,
+        "perturb": 20,
+        "checkpoint_dir": "checkpoints/runs_accv_t1",
+    },
+    {
+        "name": "lora_cka_oodonly_both_l10_pm20_seed0",
+        "position": "both",
+        "seed": 0,
+        "perturb": 20,
+        "checkpoint_dir": "checkpoints/runs_accv_t1",
+    },
 ]
 
 ACCV_TEMPLATE = """# LoRA + CKA (OOD-only probe), ACCV TrustFMI; position={position} lambda=10 seed={seed} pm={perturb}
@@ -121,8 +159,8 @@ def emit_accv_configs(out_dir: Path = CONFIGS_DIR) -> list[Path]:
 
 # Lambda values to sweep; the string suffix is used in filenames and run names.
 LAMBDAS = [
-    ("01",  0.1),
-    ("1",   1.0),
+    ("01", 0.1),
+    ("1", 1.0),
     ("10", 10.0),
 ]
 
@@ -208,7 +246,9 @@ def main(argv: list[str] | None = None) -> int:
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--out-dir", type=Path, default=CONFIGS_DIR)
-    ap.add_argument("--accv-only", action="store_true", help="Skip the original 9-config sweep")
+    ap.add_argument(
+        "--accv-only", action="store_true", help="Skip the original 9-config sweep"
+    )
     args = ap.parse_args(argv)
 
     written = []

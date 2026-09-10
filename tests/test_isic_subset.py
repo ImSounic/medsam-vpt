@@ -23,9 +23,15 @@ def test_subset_is_prefix_of_larger_subset(fake_isic_root):
 
 
 def test_subset_is_deterministic_and_seed_dependent(fake_isic_root):
-    a = ISIC2018(fake_isic_root, split="train", image_size=8, max_train_samples=10, subset_seed=0)
-    b = ISIC2018(fake_isic_root, split="train", image_size=8, max_train_samples=10, subset_seed=0)
-    c = ISIC2018(fake_isic_root, split="train", image_size=8, max_train_samples=10, subset_seed=1)
+    a = ISIC2018(
+        fake_isic_root, split="train", image_size=8, max_train_samples=10, subset_seed=0
+    )
+    b = ISIC2018(
+        fake_isic_root, split="train", image_size=8, max_train_samples=10, subset_seed=0
+    )
+    c = ISIC2018(
+        fake_isic_root, split="train", image_size=8, max_train_samples=10, subset_seed=1
+    )
     assert _ids(a) == _ids(b)
     assert _ids(a) != _ids(c)
 

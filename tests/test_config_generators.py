@@ -30,7 +30,9 @@ def test_accv_configs_content(tmp_path):
 
     enc = cfgs["lora_cka_oodonly_enc_l10_pm20_seed0"]
     assert enc["cka_regularization"]["hook_layers"] == [
-        "encoder_neck", "encoder_block_10", "encoder_block_11"
+        "encoder_neck",
+        "encoder_block_10",
+        "encoder_block_11",
     ]
     assert enc["data"]["bbox_perturb_pixels"] == 20
     assert enc["seed"] == 0
@@ -41,10 +43,16 @@ def test_accv_configs_content(tmp_path):
 
     both = cfgs["lora_cka_oodonly_both_l10_pm20_seed0"]
     assert set(both["cka_regularization"]["hook_layers"]) == {
-        "decoder_upscaling", "decoder_iou_head", "decoder_mask_logits",
-        "encoder_neck", "encoder_block_10", "encoder_block_11",
+        "decoder_upscaling",
+        "decoder_iou_head",
+        "decoder_mask_logits",
+        "encoder_neck",
+        "encoder_block_10",
+        "encoder_block_11",
     }
-    assert set(both["cka_regularization"]["weights"]) == set(both["cka_regularization"]["hook_layers"])
+    assert set(both["cka_regularization"]["weights"]) == set(
+        both["cka_regularization"]["hook_layers"]
+    )
 
     s2 = cfgs["lora_cka_oodonly_late_l10_pm20_seed2"]
     assert s2["seed"] == 2 and s2["name"] == "lora_cka_oodonly_late_l10_pm20_seed2"
@@ -64,7 +72,10 @@ def test_budget_configs(tmp_path):
     cfgs = {p.stem: _load(p) for p in paths}
     c = cfgs["lora_encoder_only_n250_seed0"]
     assert c["method"] == "lora_encoder_only"
-    assert c["method_kwargs"]["rank"] == 28 and c["method_kwargs"]["target_modules"] == "all"
+    assert (
+        c["method_kwargs"]["rank"] == 28
+        and c["method_kwargs"]["target_modules"] == "all"
+    )
     assert c["data"]["max_train_samples"] == 250 and c["data"]["subset_seed"] == 0
     assert c["train"]["max_steps"] == 6000 and c["train"]["val_every_steps"] == 500
     assert c["train"]["batch_size"] == 1

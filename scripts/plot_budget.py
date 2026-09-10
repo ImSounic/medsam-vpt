@@ -46,13 +46,20 @@ def budget_summary(budget_csv: Path, full_csv: Path):
             continue
         method, budget = parsed
         idd, far = _id_and_far(g)
-        rows.append({"method": method, "budget": budget, "id_dice": idd, "far_ood_dice": far})
+        rows.append(
+            {"method": method, "budget": budget, "id_dice": idd, "far_ood_dice": far}
+        )
     for method, run in FULL_RUNS.items():
         g = full[full.run_name == run]
         if len(g):
             idd, far = _id_and_far(g)
             rows.append(
-                {"method": method, "budget": FULL_BUDGET, "id_dice": idd, "far_ood_dice": far}
+                {
+                    "method": method,
+                    "budget": FULL_BUDGET,
+                    "id_dice": idd,
+                    "far_ood_dice": far,
+                }
             )
     zs = full[full.run_name == "zero_shot"]
     zs_id, zs_far = _id_and_far(zs) if len(zs) else (float("nan"), float("nan"))
@@ -96,13 +103,19 @@ def make_figure(summary: pd.DataFrame, out: Path) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--budget-csv", type=Path, default=REPO_ROOT / "results/accv/runs_t2.csv")
+    ap.add_argument(
+        "--budget-csv", type=Path, default=REPO_ROOT / "results/accv/runs_t2.csv"
+    )
     ap.add_argument("--full-csv", type=Path, default=REPO_ROOT / "results/runs.csv")
-    ap.add_argument("--out", type=Path, default=REPO_ROOT / "figures/accv/budget_curves.png")
+    ap.add_argument(
+        "--out", type=Path, default=REPO_ROOT / "figures/accv/budget_curves.png"
+    )
     args = ap.parse_args(argv)
     summary, first_drop = budget_summary(args.budget_csv, args.full_csv)
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    summary.sort_values(["method", "budget"]).to_csv(args.out.with_suffix(".csv"), index=False)
+    summary.sort_values(["method", "budget"]).to_csv(
+        args.out.with_suffix(".csv"), index=False
+    )
     print(summary.sort_values(["method", "budget"]).round(4).to_string(index=False))
     for method, b in first_drop.items():
         print(f"[budget] {method}: first budget below zero-shot far-OOD = {b}")

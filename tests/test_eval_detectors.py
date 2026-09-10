@@ -48,8 +48,22 @@ def test_drift_accepts_leading_batch_dim():
 
 def test_per_image_csv_columns(tmp_path):
     rows = [
-        {"image_id": "x", "dice": 0.9, "iou": 0.8, "hd95": 3.0, "iou_pred": 0.85, "drift": 0.1},
-        {"image_id": "y", "dice": 0.2, "iou": 0.1, "hd95": 40.0, "iou_pred": 0.9, "drift": 0.5},
+        {
+            "image_id": "x",
+            "dice": 0.9,
+            "iou": 0.8,
+            "hd95": 3.0,
+            "iou_pred": 0.85,
+            "drift": 0.1,
+        },
+        {
+            "image_id": "y",
+            "dice": 0.2,
+            "iou": 0.1,
+            "hd95": 40.0,
+            "iou_pred": 0.9,
+            "drift": 0.5,
+        },
     ]
     p = write_per_image_csv(tmp_path / "a" / "b.csv", rows)
     with open(p) as f:

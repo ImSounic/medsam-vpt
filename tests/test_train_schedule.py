@@ -15,7 +15,9 @@ from src.train_schedule import (
 
 def test_epoch_mode_when_no_max_steps():
     b = resolve_budget({"epochs": 6})
-    assert b == Budget(mode="epochs", n_segments=6, max_steps=None, val_every_steps=None)
+    assert b == Budget(
+        mode="epochs", n_segments=6, max_steps=None, val_every_steps=None
+    )
 
 
 def test_steps_mode_segments():
@@ -55,8 +57,17 @@ def test_cycle_loader_empty_raises():
 
 
 def test_quick_overrides_epoch_mode():
-    cfg = {"train": {"epochs": 6}, "cka_regularization": {"enabled": True, "n_isic": 0,
-           "n_busi": 16, "n_cbis": 16, "encoder_chunk": 8, "every_n_steps": 4}}
+    cfg = {
+        "train": {"epochs": 6},
+        "cka_regularization": {
+            "enabled": True,
+            "n_isic": 0,
+            "n_busi": 16,
+            "n_cbis": 16,
+            "encoder_chunk": 8,
+            "every_n_steps": 4,
+        },
+    }
     apply_quick_overrides(cfg)
     assert cfg["train"]["epochs"] == 1
     assert cfg["cka_regularization"]["n_busi"] == 2
