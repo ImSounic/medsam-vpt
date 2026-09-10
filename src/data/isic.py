@@ -50,6 +50,8 @@ class ISIC2018(Dataset):
         image_size: int = 1024,
         bbox_perturb_pixels: int = 0,
         random_perturb: bool = False,
+        max_train_samples: int | None = None,
+        subset_seed: int = 0,
     ) -> None:
         super().__init__()
         self.root = Path(root)
@@ -82,6 +84,16 @@ class ISIC2018(Dataset):
             raise RuntimeError(f"No image/mask pairs found in {self.root} / {split}.")
         if missing > 0:
             print(f"[ISIC2018:{split}] warning: {missing} images had no matching mask")
+
+        # Deterministic subset: one fixed permutation per seed, so a smaller
+        # budget is always a prefix of a larger one.
+        if max_train_samples is not None and max_train_samples < len(self.items):
+            perm = np.random.default_rng(subset_seed).permutation(len(self.items))
+            self.items = [self.items[i] for i in perm[:max_train_samples]]
+            print(
+                f"[ISIC2018:{split}] subset: {len(self.items)} of {len(perm)} "
+                f"(subset_seed={subset_seed})"
+            )
 
     def __len__(self) -> int:
         return len(self.items)
