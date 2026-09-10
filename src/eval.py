@@ -26,7 +26,8 @@ from src.device_utils import (
 )
 from src.metrics import aggregate_metrics, dice_score, hd95, iou_score
 from src.models.medsam import load_medsam
-from src.models.methods import setup_method
+from src.drift import decoder_drift
+from src.models.methods import encoder_in_grad_path, setup_method
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -42,6 +43,22 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--quick", action="store_true", help="Run on first 8 images only")
     p.add_argument("--device", default=None)
+    p.add_argument("--limit", type=int, default=None, help="First N images per dataset")
+    p.add_argument(
+        "--drift",
+        action="store_true",
+        help="Load base MedSAM alongside and write per-image decoder drift "
+        "(1 - CKA of the upscaled mask embedding).",
+    )
+    p.add_argument(
+        "--bbox-perturb", type=int, default=None, help="Override eval.bbox_perturb_pixels"
+    )
+    p.add_argument(
+        "--results-csv", type=Path, default=None, help="Override output.results_csv"
+    )
+    p.add_argument(
+        "--per-image-dir", type=Path, default=None, help="Directory for per-image CSVs"
+    )
     return p.parse_args()
 
 
@@ -88,22 +105,22 @@ def build_dataset(cfg: dict, ts_cfg: dict, image_size: int):
 
 
 @torch.no_grad()
-def predict_from_embeddings(
+def predict_from_embeddings_with_iou(
     sam,
     image_embeddings: torch.Tensor,
     bboxes: torch.Tensor,
     H: int,
     W: int,
-) -> torch.Tensor:
-    """Run prompt encoder + mask decoder over precomputed embeddings; returns (B, H, W) uint8."""
-    masks_out = []
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Prompt encoder + mask decoder per image; returns (B, H, W) uint8 masks and (B,) iou_pred."""
+    masks_out, ious = [], []
     for i in range(image_embeddings.shape[0]):
         sparse_embed, dense_embed = sam.prompt_encoder(
             points=None,
             boxes=bboxes[i : i + 1],
             masks=None,
         )
-        low_res, _ = sam.mask_decoder(
+        low_res, iou_pred = sam.mask_decoder(
             image_embeddings=image_embeddings[i : i + 1],
             image_pe=sam.prompt_encoder.get_dense_pe(),
             sparse_prompt_embeddings=sparse_embed,
@@ -114,7 +131,34 @@ def predict_from_embeddings(
             low_res, size=(H, W), mode="bilinear", align_corners=False
         )
         masks_out.append((mask > 0).to(torch.uint8).squeeze(0).squeeze(0))
-    return torch.stack(masks_out, dim=0)
+        ious.append(iou_pred.reshape(-1)[0].float())
+    return torch.stack(masks_out, dim=0), torch.stack(ious, dim=0)
+
+
+@torch.no_grad()
+def predict_from_embeddings(
+    sam,
+    image_embeddings: torch.Tensor,
+    bboxes: torch.Tensor,
+    H: int,
+    W: int,
+) -> torch.Tensor:
+    """Masks only; kept for scripts/eval_all_methods.py and bbox_robustness."""
+    masks, _ = predict_from_embeddings_with_iou(sam, image_embeddings, bboxes, H, W)
+    return masks
+
+
+def write_per_image_csv(path: Path, rows: list[dict]) -> Path:
+    """Columns follow the first row's keys (image_id, dice, iou, hd95, iou_pred[, drift])."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = (
+        list(rows[0].keys()) if rows else ["image_id", "dice", "iou", "hd95", "iou_pred"]
+    )
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fieldnames)
+        w.writeheader()
+        w.writerows(rows)
+    return path
 
 
 @torch.no_grad()
@@ -131,6 +175,9 @@ def evaluate(cfg: dict, args: argparse.Namespace) -> int:
     if preferred == "cuda" and not torch.cuda.is_available():
         preferred = None
     device = get_device(prefer=preferred)
+    if args.bbox_perturb is not None:
+        cfg["eval"]["bbox_perturb_pixels"] = int(args.bbox_perturb)
+    limit = args.limit if args.limit is not None else (8 if args.quick else None)
 
     image_size = cfg["model"]["image_size"]
     print(f"[eval] device={device} ({device_name(device)}) image_size={image_size}")
@@ -181,6 +228,24 @@ def evaluate(cfg: dict, args: argparse.Namespace) -> int:
 
     sam.eval()
 
+    base_sam = None
+    cur_hook = base_hook = None
+    shares_encoder = False
+    if args.drift:
+        from cka.hooks import register_hooks
+
+        base_sam = load_medsam(base_ckpt, arch=cfg["model"]["arch"], device=device)
+        setup_method(base_sam, "zero_shot")
+        base_sam.eval()
+        cur_hook = register_hooks(
+            sam, ["decoder_upscaling"], detach=True, accumulate=True
+        )
+        base_hook = register_hooks(
+            base_sam, ["decoder_upscaling"], detach=True, accumulate=True
+        )
+        shares_encoder = not encoder_in_grad_path(method)
+        print(f"[eval] drift enabled (base encoder reused: {shares_encoder})")
+
     reset_peak_memory(device)
 
     rows_for_csv: list[dict] = []
@@ -189,8 +254,8 @@ def evaluate(cfg: dict, args: argparse.Namespace) -> int:
         ds_name = ts_cfg["name"]
         print(f"\n[eval] === {ds_name} ===")
         ds = build_dataset(cfg, ts_cfg, image_size)
-        if args.quick:
-            ds.items = ds.items[:8]
+        if limit is not None:
+            ds.items = ds.items[:limit]
         loader = DataLoader(
             ds,
             batch_size=cfg["eval"]["batch_size"],
@@ -201,27 +266,52 @@ def evaluate(cfg: dict, args: argparse.Namespace) -> int:
         per_image: list[dict] = []
         per_image_rows: list[dict] = []
         t0 = time.time()
-        for batch in tqdm(loader, desc=ds_name):
-            images = batch["image"].to(device)
-            bboxes = batch["bbox"].to(device)
-            masks_gt = batch["mask"].cpu().numpy()
-            preds = predict_batch(sam, images, bboxes)
-            preds_np = preds.cpu().numpy()
-            for j in range(preds_np.shape[0]):
-                pj = preds_np[j]
-                gj = masks_gt[j]
-                d = dice_score(pj, gj)
-                i_ = iou_score(pj, gj)
-                h_ = hd95(pj, gj)
-                per_image.append({"dice": d, "iou": i_, "hd95": h_})
-                per_image_rows.append(
-                    {
+        with torch.no_grad():
+            for batch in tqdm(loader, desc=ds_name):
+                images = batch["image"].to(device)
+                bboxes = batch["bbox"].to(device)
+                masks_gt = batch["mask"].cpu().numpy()
+                H, W = images.shape[-2:]
+                embeddings = sam.image_encoder(images)
+                if cur_hook is not None:
+                    cur_hook.clear()
+                preds, iou_preds = predict_from_embeddings_with_iou(
+                    sam, embeddings, bboxes, H, W
+                )
+                drifts = None
+                if base_sam is not None:
+                    base_emb = (
+                        embeddings if shares_encoder else base_sam.image_encoder(images)
+                    )
+                    base_hook.clear()
+                    predict_from_embeddings_with_iou(base_sam, base_emb, bboxes, H, W)
+                    cur_acts = cur_hook.stacked()["decoder_upscaling"]
+                    base_acts = base_hook.stacked()["decoder_upscaling"]
+                    drifts = [
+                        decoder_drift(base_acts[j], cur_acts[j])
+                        for j in range(cur_acts.shape[0])
+                    ]
+                    cur_hook.clear()
+                    base_hook.clear()
+                preds_np = preds.cpu().numpy()
+                iou_np = iou_preds.cpu().numpy()
+                for j in range(preds_np.shape[0]):
+                    pj = preds_np[j]
+                    gj = masks_gt[j]
+                    d = dice_score(pj, gj)
+                    i_ = iou_score(pj, gj)
+                    h_ = hd95(pj, gj)
+                    per_image.append({"dice": d, "iou": i_, "hd95": h_})
+                    row = {
                         "image_id": batch["image_id"][j],
                         "dice": d,
                         "iou": i_,
                         "hd95": h_,
+                        "iou_pred": float(iou_np[j]),
                     }
-                )
+                    if drifts is not None:
+                        row["drift"] = float(drifts[j])
+                    per_image_rows.append(row)
         elapsed = time.time() - t0
 
         agg = aggregate_metrics(per_image)
@@ -246,24 +336,35 @@ def evaluate(cfg: dict, args: argparse.Namespace) -> int:
                 "peak_mem_mb": f"{peak_mb:.0f}",
                 "wall_clock_s": f"{elapsed:.1f}",
                 "timestamp": datetime.now().isoformat(timespec="seconds"),
-                "notes": "quick" if args.quick else "",
+                "notes": ";".join(
+                    t
+                    for t in (
+                        "quick" if args.quick else "",
+                        f"limit{limit}" if limit is not None else "",
+                        "drift" if args.drift else "",
+                        f"pm{cfg['eval'].get('bbox_perturb_pixels', 0)}",
+                    )
+                    if t
+                ),
             }
         )
 
         # Per-image CSV (one per dataset)
-        per_image_path = REPO_ROOT / cfg["output"].get(
-            "per_image_csv", "results/raw/per_image.csv"
+        per_image_dir = (
+            REPO_ROOT / args.per_image_dir
+            if args.per_image_dir is not None
+            else (
+                REPO_ROOT
+                / cfg["output"].get("per_image_csv", "results/raw/per_image.csv")
+            ).parent
         )
-        per_image_path = per_image_path.with_name(f"{run_name}_{ds_name}_per_image.csv")
-        per_image_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(per_image_path, "w", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=["image_id", "dice", "iou", "hd95"])
-            w.writeheader()
-            w.writerows(per_image_rows)
+        per_image_path = write_per_image_csv(
+            per_image_dir / f"{run_name}_{ds_name}_per_image.csv", per_image_rows
+        )
         print(f"[eval] per-image -> {per_image_path}")
 
     # Append to runs.csv
-    runs_path = REPO_ROOT / cfg["output"]["results_csv"]
+    runs_path = REPO_ROOT / (args.results_csv or cfg["output"]["results_csv"])
     runs_path.parent.mkdir(parents=True, exist_ok=True)
     file_exists = runs_path.exists() and runs_path.stat().st_size > 0
     with open(runs_path, "a", newline="") as f:
@@ -273,6 +374,9 @@ def evaluate(cfg: dict, args: argparse.Namespace) -> int:
             w.writeheader()
         w.writerows(rows_for_csv)
     print(f"[eval] appended {len(rows_for_csv)} rows to {runs_path}")
+    if cur_hook is not None:
+        cur_hook.remove()
+        base_hook.remove()
     return 0
 
 

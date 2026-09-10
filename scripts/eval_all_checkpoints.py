@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -15,6 +16,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--config", required=True, type=Path)
     p.add_argument("--checkpoint-glob", default="checkpoints/runs/*/best.pth")
     p.add_argument("--device", default=None)
+    p.add_argument(
+        "--eval-args",
+        default="",
+        help='Extra arguments passed verbatim to src.eval, e.g. "--drift --limit 100".',
+    )
     return p.parse_args()
 
 
@@ -44,6 +50,8 @@ def main() -> int:
         ]
         if args.device:
             cmd.extend(["--device", args.device])
+        if args.eval_args:
+            cmd.extend(shlex.split(args.eval_args))
         subprocess.run(cmd, check=True, cwd=REPO_ROOT)
     return 0
 

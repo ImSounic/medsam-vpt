@@ -1,0 +1,37 @@
+# ACCV TrustFMI eval config: four-dataset drift ladder, tight boxes unless
+# overridden with --bbox-perturb. Outputs default under results/accv/.
+name: zero_shot
+method: zero_shot
+
+model:
+  arch: vit_b
+  checkpoint: checkpoints/medsam_vit_b.pth
+  image_size: 1024
+
+data:
+  root: data
+  test_sets:
+    - name: isic2018_test
+      kind: isic
+      split: test
+    - name: ph2
+      kind: ph2
+      root: data/ph2
+    - name: busi
+      kind: busi
+      root: data/busi
+    - name: cbis_ddsm
+      kind: cbis_ddsm
+      root: data/cbis-ddsm
+      split: test
+      abnormality_type: all
+
+eval:
+  batch_size: 2
+  num_workers: 4
+  bbox_perturb_pixels: 0
+  device: cuda
+
+output:
+  results_csv: results/accv/runs.csv
+  per_image_csv: results/accv/raw/per_image.csv
