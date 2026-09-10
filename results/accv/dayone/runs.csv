@@ -1,0 +1,7 @@
+run_name,method,dataset,seed,dice_mean,dice_std,iou_mean,hd95_mean,trainable_params,peak_mem_mb,wall_clock_s,timestamp,notes
+zero_shot,zero_shot,cbis_ddsm,0,0.7171,0.1309,0.5740,11.3207,0,5664,56.9,2026-09-10T14:24:23,limit100;drift;pm0
+decoder_only_seed0,decoder_only,cbis_ddsm,0,0.8399,0.0609,0.7285,4.5095,4058340,5680,52.4,2026-09-10T14:25:23,limit100;drift;pm0
+vpt_shallow_seed0,vpt_shallow,cbis_ddsm,0,0.6175,0.2149,0.4777,101.2780,4066020,5704,95.2,2026-09-10T14:27:06,limit100;drift;pm0
+vpt_deep_seed0,vpt_deep,cbis_ddsm,0,0.5402,0.2479,0.4065,170.3481,4150500,5704,95.4,2026-09-10T14:28:50,limit100;drift;pm0
+lora_seed0,lora,cbis_ddsm,0,0.5048,0.2870,0.3852,223.5786,4353252,5706,97.0,2026-09-10T14:30:35,limit100;drift;pm0
+full_ft_seed0,full_ft,cbis_ddsm,0,0.8433,0.0542,0.7326,4.5957,93729252,6046,95.6,2026-09-10T14:32:19,limit100;drift;pm0

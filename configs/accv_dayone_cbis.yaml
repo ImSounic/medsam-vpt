@@ -1,0 +1,24 @@
+# Day-one iou_pred check (spec 6.3): CBIS-DDSM only; run with --limit 100 --drift.
+name: zero_shot
+method: zero_shot
+model:
+  arch: vit_b
+  checkpoint: checkpoints/medsam_vit_b.pth
+  image_size: 1024
+data:
+  root: data
+  test_sets:
+  - name: cbis_ddsm
+    kind: cbis_ddsm
+    root: data/cbis-ddsm
+    split: test
+    abnormality_type: all
+eval:
+  batch_size: 2
+  num_workers: 4
+  bbox_perturb_pixels: 0
+  device: cuda
+output:
+  results_csv: results/accv/dayone/runs.csv
+  per_image_csv: results/accv/dayone/raw/per_image.csv
+
