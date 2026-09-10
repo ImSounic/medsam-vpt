@@ -19,6 +19,10 @@ def _resolve_module(sam: Sam, name: str) -> nn.Module:
     if name == "decoder_mask_logits":
         # Hook whole mask_decoder; forward returns (masks, iou_pred), keep masks.
         return sam.mask_decoder
+    if name == "encoder_neck":
+        enc = sam.image_encoder
+        base = getattr(enc, "base", None)
+        return base.neck if base is not None and hasattr(base, "neck") else enc.neck
     if name.startswith("encoder_block_"):
         try:
             idx = int(name.removeprefix("encoder_block_"))
@@ -34,7 +38,7 @@ def _resolve_module(sam: Sam, name: str) -> nn.Module:
         return blocks[idx]
     raise ValueError(
         f"Unknown layer name: {name!r}. "
-        f"Supported: encoder_block_<i>, decoder_transformer, "
+        f"Supported: encoder_block_<i>, encoder_neck, decoder_transformer, "
         f"decoder_upscaling, decoder_iou_head, decoder_mask_logits."
     )
 

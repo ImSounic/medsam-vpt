@@ -134,6 +134,9 @@ def train_one_epoch(
         else:
             task_loss.backward()
         del logits, task_loss
+        if cka_ctx is not None:
+            # Hooks also fire during the task forward; drop those activations now.
+            cka_ctx["hook_handle"].clear()
 
         cka_loss_val = 0.0
         do_cka_this_step = (cka_ctx is not None) and (step_idx % cka_every_n == 0)
@@ -315,6 +318,8 @@ def main() -> int:
         image_size=image_size,
         bbox_perturb_pixels=cfg["data"].get("bbox_perturb_pixels", 0),
         random_perturb=bool(cfg["data"].get("random_perturb", False)),
+        max_train_samples=cfg["data"].get("max_train_samples"),
+        subset_seed=int(cfg["data"].get("subset_seed", 0)),
     )
     val_ds = ISIC2018(
         root=REPO_ROOT / cfg["data"]["root"],
