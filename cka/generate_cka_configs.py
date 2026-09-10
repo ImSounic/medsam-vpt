@@ -1,0 +1,122 @@
+"""Generate 9 LoRA + CKA configs: 3 positions x 3 lambdas x seed 0."""
+from __future__ import annotations
+
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+CONFIGS_DIR = REPO_ROOT / "configs"
+
+POSITION_LAYERS = {
+    "early": ["decoder_transformer"],
+    "mid":   ["decoder_transformer", "decoder_upscaling"],
+    "late":  ["decoder_upscaling", "decoder_iou_head", "decoder_mask_logits"],
+}
+# Per-layer weight in the CKA loss sum; higher where the paper's correlation is stronger.
+POSITION_WEIGHTS = {
+    "early": {"decoder_transformer": 1.0},
+    "mid":   {"decoder_transformer": 1.0, "decoder_upscaling": 0.8},
+    "late":  {"decoder_upscaling": 0.8, "decoder_iou_head": 1.5,
+              "decoder_mask_logits": 1.0},
+}
+
+# Lambda values to sweep; the string suffix is used in filenames and run names.
+LAMBDAS = [
+    ("01",  0.1),
+    ("1",   1.0),
+    ("10", 10.0),
+]
+
+
+CONFIG_TEMPLATE = """# LoRA + CKA auto-generated; position={position} lambda={lambda_val} seed=0 hook layers={layers} weights={weights}
+
+name: {run_name}
+method: lora
+seed: 0
+
+method_kwargs:
+  rank: 8
+  alpha: 16
+  dropout: 0.0
+
+model:
+  arch: vit_b
+  checkpoint: checkpoints/medsam_vit_b.pth
+  image_size: 1024
+
+data:
+  root: data
+  bbox_perturb_pixels: 0
+
+train:
+  batch_size: 1
+  num_workers: 8              # bumped from 2 to keep GPU fed (PIL decode/resize is CPU-bound)
+  epochs: 6
+  lr: 5.0e-4
+  weight_decay: 0.0
+  dice_weight: 0.5
+  amp: true
+  cooldown_seconds: 0         # 0 (was 60); A10 datacenter needs no thermal cooldown
+
+eval:
+  batch_size: 1
+  num_workers: 4
+
+cka_regularization:
+  enabled: true
+  lambda: {lambda_val}
+  probe_seed: 42
+  n_isic: 12
+  n_busi: 10
+  n_cbis: 10
+  encoder_chunk: 4               # probe encoder micro-batch; 4 fits 22 GB A10 with checkpointing, 8/16 OOM
+  use_grad_checkpoint: true      # per-block gradient checkpointing on the probe encoder
+  every_n_steps: 4               # compute CKA loss every N steps (lambda scaled by N), ~4x speedup
+  hook_layers:
+{hook_layers_yaml}
+  weights:
+{weights_yaml}
+
+output:
+  checkpoint_dir: checkpoints/runs_cka_{position}
+"""
+
+
+def emit_config(position: str, lambda_str: str, lambda_val: float) -> Path:
+    layers = POSITION_LAYERS[position]
+    weights = POSITION_WEIGHTS[position]
+    run_name = f"lora_cka_{position}_l{lambda_str}_seed0"
+
+    hook_layers_yaml = "\n".join(f"    - {layer}" for layer in layers)
+    weights_yaml = "\n".join(f"    {k}: {v}" for k, v in weights.items())
+
+    out = CONFIG_TEMPLATE.format(
+        position=position,
+        lambda_val=lambda_val,
+        layers=layers,
+        weights=weights,
+        run_name=run_name,
+        hook_layers_yaml=hook_layers_yaml,
+        weights_yaml=weights_yaml,
+    )
+    out_path = CONFIGS_DIR / f"{run_name}.yaml"
+    out_path.write_text(out)
+    return out_path
+
+
+def main() -> int:
+    print("[gen-cka-configs] generating 9 LoRA + CKA configs (3 positions x 3 lambdas)")
+    written = []
+    for position in ("early", "mid", "late"):
+        for lambda_str, lambda_val in LAMBDAS:
+            p = emit_config(position, lambda_str, lambda_val)
+            written.append(p)
+            print(f"  wrote {p.name}")
+    print(f"\n[gen-cka-configs] done: {len(written)} configs in {CONFIGS_DIR}")
+    print("\nNext steps:")
+    print("  1. Commit + push the 9 new configs")
+    print("  2. On JupyterLab: pull, then `nohup bash cka/run_cka_sweep.sh > cka_sweep.log 2>&1 &`")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,9 @@
+run_name,method,dataset,seed,dice_mean,dice_std,iou_mean,hd95_mean,trainable_params,peak_mem_mb,wall_clock_s,timestamp,notes
+zero_shot,zero_shot,isic2018_test,0,0.9072,0.0642,0.8359,14.6067,0,10152,186.1,2026-06-06T02:50:03,
+zero_shot,zero_shot,ph2,0,0.9054,0.0755,0.8343,17.0325,0,10152,37.1,2026-06-06T02:50:40,
+zero_shot,zero_shot,busi,0,0.8234,0.0884,0.7082,20.4210,0,10152,111.8,2026-06-06T02:52:32,
+zero_shot,zero_shot,cbis_ddsm,0,0.6924,0.1640,0.5506,15.2826,0,10152,60.0,2026-06-06T02:53:32,
+lora_cka_oodonly_late_l10_rand100_seed0,lora,isic2018_test,0,0.9407,0.0445,0.8911,6.0974,4353252,10185,185.7,2026-06-06T02:56:39,
+lora_cka_oodonly_late_l10_rand100_seed0,lora,ph2,0,0.9473,0.0329,0.9016,4.1798,4353252,10153,37.9,2026-06-06T02:57:17,
+lora_cka_oodonly_late_l10_rand100_seed0,lora,busi,0,0.6877,0.1955,0.5545,239.0802,4353252,10153,113.8,2026-06-06T02:59:11,
+lora_cka_oodonly_late_l10_rand100_seed0,lora,cbis_ddsm,0,0.1827,0.2129,0.1190,366.5206,4353252,10153,61.7,2026-06-06T03:00:13,
