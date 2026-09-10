@@ -1,6 +1,6 @@
 
 name: lora_encoder_only_r28_all_seed0
-method: lora
+method: lora_encoder_only
 seed: 0
 
 method_kwargs:

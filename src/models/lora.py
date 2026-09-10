@@ -103,3 +103,11 @@ def apply_lora(
     if train_mask_decoder:
         for p in sam.mask_decoder.parameters():
             p.requires_grad = True
+
+
+def apply_lora_encoder_only(sam: Sam, **kwargs) -> None:
+    """LoRA on the image encoder only; the mask decoder stays frozen."""
+    kwargs.pop("train_mask_decoder", None)
+    apply_lora(sam, train_mask_decoder=False, **kwargs)
+    for p in sam.mask_decoder.parameters():
+        p.requires_grad = False

@@ -27,10 +27,15 @@ def setup_method(sam: Sam, method: str, **kwargs) -> dict:
         from .lora import apply_lora
 
         apply_lora(sam, **kwargs)
+    elif method == "lora_encoder_only":
+        from .lora import apply_lora_encoder_only
+
+        apply_lora_encoder_only(sam, **kwargs)
     else:
         raise ValueError(
             f"Unknown method: {method!r}. "
-            "Supported: zero_shot, decoder_only, vpt_shallow, vpt_deep, full_ft, lora."
+            "Supported: zero_shot, decoder_only, vpt_shallow, vpt_deep, full_ft, "
+            "lora, lora_encoder_only."
         )
 
     total = sum(p.numel() for p in sam.parameters())
@@ -45,4 +50,4 @@ def setup_method(sam: Sam, method: str, **kwargs) -> dict:
 
 def encoder_in_grad_path(method: str) -> bool:
     """Whether the encoder forward must be inside the autograd graph (true for full_ft, vpt_*, lora)."""
-    return method in {"full_ft", "vpt_shallow", "vpt_deep", "lora"}
+    return method in {"full_ft", "vpt_shallow", "vpt_deep", "lora", "lora_encoder_only"}
