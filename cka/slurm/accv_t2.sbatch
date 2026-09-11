@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=accv_t2
 #SBATCH --partition=main-gpu
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:lovelace:1   # 48 GB L40/L40S only; 22 GB cards OOM on the CKA probe
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 #SBATCH --time=03:00:00

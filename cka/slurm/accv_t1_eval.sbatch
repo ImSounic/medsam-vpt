@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=accv_t1_eval
 #SBATCH --partition=main-gpu
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:lovelace:1   # 48 GB L40/L40S only; 22 GB cards OOM on the CKA probe
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 #SBATCH --time=06:00:00
@@ -16,18 +16,21 @@ source /software/anaconda3/2025.06/etc/profile.d/conda.sh
 conda activate medsam-vpt
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export LANG=en_US.UTF-8
+# Override with sbatch --export=ALL,CKPT_GLOB=...,BBOX_OUT=... to evaluate a subset.
+CKPT_GLOB="${CKPT_GLOB:-checkpoints/runs_accv_t1/*/best.pth}"
+BBOX_OUT="${BBOX_OUT:-bbox_robustness/results_accv_t1}"
 export PYTHONUNBUFFERED=1   # stream [train] prints into the .out log
 
 python scripts/eval_all_checkpoints.py \
   --config configs/accv_eval.yaml \
-  --checkpoint-glob 'checkpoints/runs_accv_t1/*/best.pth' \
+  --checkpoint-glob "$CKPT_GLOB" \
   --eval-args "--results-csv cka/results/runs_accv_t1.csv --per-image-dir results/accv/raw_t1"
 
 python bbox_robustness/eval_bbox_robust.py \
   --config configs/zero_shot.yaml \
-  --checkpoint-glob 'checkpoints/runs_accv_t1/*/best.pth' \
+  --checkpoint-glob "$CKPT_GLOB" \
   --n-samples 1 \
-  --out-dir bbox_robustness/results_accv_t1
+  --out-dir "$BBOX_OUT"
 
 PM0="checkpoints/runs_cka_oodonly_late/lora_cka_oodonly_late_l10_seed0/best.pth"
 if [[ -f "$PM0" ]]; then
