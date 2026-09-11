@@ -1,0 +1,9 @@
+run_name,method,dataset,seed,dice_mean,dice_std,iou_mean,hd95_mean,trainable_params,peak_mem_mb,wall_clock_s,timestamp,notes
+lora_cka_oodonly_late_l10_pm20_seed1,lora,isic2018_test,1,0.9535,0.0401,0.9136,4.2083,4353252,5291,392.0,2026-09-10T23:53:37,pm0
+lora_cka_oodonly_late_l10_pm20_seed1,lora,ph2,1,0.9552,0.0267,0.9155,2.5899,4353252,5291,70.9,2026-09-10T23:54:48,pm0
+lora_cka_oodonly_late_l10_pm20_seed1,lora,busi,1,0.8340,0.1138,0.7292,81.3030,4353252,5291,205.4,2026-09-10T23:58:14,pm0
+lora_cka_oodonly_late_l10_pm20_seed1,lora,cbis_ddsm,1,0.6504,0.2231,0.5167,66.8333,4353252,5291,108.5,2026-09-11T00:00:03,pm0
+lora_cka_oodonly_late_l10_pm20_seed2,lora,isic2018_test,2,0.9500,0.0405,0.9072,4.6662,4353252,5291,344.8,2026-09-11T00:07:33,pm0
+lora_cka_oodonly_late_l10_pm20_seed2,lora,ph2,2,0.9525,0.0281,0.9105,3.0940,4353252,5291,70.1,2026-09-11T00:08:44,pm0
+lora_cka_oodonly_late_l10_pm20_seed2,lora,busi,2,0.8242,0.1236,0.7160,58.7153,4353252,5291,204.9,2026-09-11T00:12:09,pm0
+lora_cka_oodonly_late_l10_pm20_seed2,lora,cbis_ddsm,2,0.4906,0.2854,0.3699,102.9150,4353252,5291,104.0,2026-09-11T00:13:53,pm0
