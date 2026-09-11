@@ -23,7 +23,12 @@ def _bash_array(text: str, name: str) -> list[str]:
 
 
 @pytest.mark.parametrize(
-    "script,var,n", [("accv_t1.sbatch", "CONFIGS", 4), ("accv_t2.sbatch", "CONFIGS", 9)]
+    "script,var,n",
+    [
+        ("accv_t1.sbatch", "CONFIGS", 4),
+        ("accv_t2.sbatch", "CONFIGS", 9),
+        ("accv_t4.sbatch", "CONFIGS", 2),
+    ],
 )
 def test_train_arrays_match_configs(script, var, n):
     text = (SLURM / script).read_text()
@@ -52,6 +57,8 @@ def test_t3_array_covers_two_prompt_levels():
         "accv_t2.sbatch",
         "accv_t2_eval.sbatch",
         "accv_t3.sbatch",
+        "accv_t4.sbatch",
+        "accv_t4_eval.sbatch",
         "submit_accv.sh",
         "sync_to_hpc.sh",
     ],
@@ -64,3 +71,10 @@ def test_submit_chain_dependencies():
     text = (SLURM / "submit_accv.sh").read_text()
     assert "afterany:$T1" in text and "afterany:$T2" in text
     assert text.index("accv_t1.sbatch") < text.index("accv_t2.sbatch")
+
+
+def test_t4_eval_covers_pm0_sweep_and_encoder_only_dumps():
+    text = (SLURM / "accv_t4_eval.sbatch").read_text()
+    assert "results_cka_oodonly_late_l10_pm0" in text
+    assert "lora_encoder_only_r28_all_seed0/best.pth" in text
+    assert "--drift" in text and "for PM in 0 50" in text and "runs_t3_pm${PM}.csv" in text
