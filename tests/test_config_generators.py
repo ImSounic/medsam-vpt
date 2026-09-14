@@ -20,12 +20,16 @@ def test_accv_runs_are_the_spec_set():
         "lora_cka_oodonly_late_l10_pm20_seed2",
         "lora_cka_oodonly_enc_l10_pm20_seed0",
         "lora_cka_oodonly_both_l10_pm20_seed0",
+        "lora_cka_oodonly_both_l10_pm20_seed1",
+        "lora_cka_oodonly_both_l10_pm20_seed2",
+        "lora_cka_oodonly_enc_l10_pm20_seed1",
+        "lora_cka_oodonly_enc_l10_pm20_seed2",
     ]
 
 
 def test_accv_configs_content(tmp_path):
     paths = emit_accv_configs(tmp_path)
-    assert len(paths) == 6
+    assert len(paths) == 10
     cfgs = {p.stem: _load(p) for p in paths}
 
     enc = cfgs["lora_cka_oodonly_enc_l10_pm20_seed0"]
@@ -60,6 +64,8 @@ def test_accv_configs_content(tmp_path):
     pm0 = cfgs["lora_cka_oodonly_late_l10_seed0"]
     assert pm0["data"]["bbox_perturb_pixels"] == 0
     assert pm0["output"]["checkpoint_dir"] == "checkpoints/runs_cka_oodonly_late"
+    b2 = cfgs["lora_cka_oodonly_both_l10_pm20_seed2"]
+    assert b2["seed"] == 2 and b2["output"]["checkpoint_dir"] == "checkpoints/runs_accv_t5"
     ref = cfgs["lora_cka_oodonly_late_l10_pm20_seed0"]
     assert ref["output"]["checkpoint_dir"] == "checkpoints/runs_cka_oodonly_late_pm20"
 

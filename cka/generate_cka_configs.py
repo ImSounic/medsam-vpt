@@ -79,6 +79,18 @@ ACCV_RUNS = [
         "perturb": 20,
         "checkpoint_dir": "checkpoints/runs_accv_t1",
     },
+    # T5 (14 Sep): seeds for the hook-ablation arms after "both" won on seed 0.
+    *[
+        {
+            "name": f"lora_cka_oodonly_{pos}_l10_pm20_seed{seed}",
+            "position": pos,
+            "seed": seed,
+            "perturb": 20,
+            "checkpoint_dir": "checkpoints/runs_accv_t5",
+        }
+        for pos in ("both", "enc")
+        for seed in (1, 2)
+    ],
 ]
 
 ACCV_TEMPLATE = """# LoRA + CKA (OOD-only probe), ACCV TrustFMI; position={position} lambda=10 seed={seed} pm={perturb}
