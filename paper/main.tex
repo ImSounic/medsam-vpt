@@ -11,6 +11,12 @@
 % Numbers that update when the last jobs finish are wrapped in \pending{}.
 \newcommand{\pending}[1]{\textcolor{blue}{#1}}
 \newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+% Float spacing: let text and floats share pages more tightly (no font or margin changes).
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\textfraction}{0.05}
+\renewcommand{\floatpagefraction}{0.8}
+\setlength{\textfloatsep}{10pt plus 2pt minus 4pt}
+\setlength{\abovecaptionskip}{4pt}
 
 \begin{document}
 

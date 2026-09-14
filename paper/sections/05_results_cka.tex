@@ -1,7 +1,7 @@
 \section{Results: CKA Regularisation}
 \label{sec:res_cka}
 
-\begin{table}[t]
+\begin{table}[tbp]
   \centering
   \caption{LoRA with and without the decoder CKA loss, both trained with 20\,px jitter, tight-box evaluation, mean $\pm$ std over three seeds; $\Delta$HD95 in pixels. $p$: paired Wilcoxon over per-image Dice at 20\,px evaluation jitter, pairs matched on seed and image, Holm-corrected.}
   \label{tab:cka}
@@ -11,9 +11,9 @@
 \paragraph{Multi-seed effect.}
 Table~\ref{tab:cka} gives the main comparison. The decoder CKA loss leaves in-domain and near-OOD Dice within 0.003 and raises far-OOD Dice by 0.051 on BUSI and 0.104 on CBIS-DDSM, with HD95 falling by 96 and 152 pixels: the regulariser removes the boundary failures of unregularised LoRA rather than small overlap losses. The BUSI gain is stable across seeds (std 0.008 against 0.032 without the loss); on CBIS-DDSM the seed spread is large for both models (std 0.095) but the gain holds in every seed, and the paired test is significant on all four datasets with a median per-image gain of 0.088 on CBIS-DDSM. With tight-box training the loss gives smaller same-signed gains (0.033, 0.027; seed 0); with rand100 training it hurts (0.059 and 0.032 lower), so the two regularisers compound at mild jitter and conflict under heavy jitter.
 
-\begin{figure}[t]
+\begin{figure}[tbp]
   \centering
-  \includegraphics[width=\linewidth]{figures/robustness_six_curves.png}
+  \includegraphics[width=0.86\linewidth]{figures/robustness_six_curves.png}
   \caption{Dice against outward box expansion for LoRA with (red) and without (grey) the decoder CKA loss under three training regimes: tight (solid), 20\,px jitter (dashed), random jitter up to 100\,px (dotted). Bands: one std over three seeds where available.}
   \label{fig:curves}
 \end{figure}
@@ -21,9 +21,9 @@ Table~\ref{tab:cka} gives the main comparison. The decoder CKA loss leaves in-do
 \paragraph{Prompt robustness.}
 In Fig.~\ref{fig:curves} the regularised pm20 model is the best of the six on both far-OOD sets at every expansion, with an advantage that narrows as boxes loosen: the paired gain on BUSI is 0.053, 0.046, 0.038 and 0.017 at 20, 50, 100 and 200\,px, and on CBIS-DDSM 0.088, 0.052, 0.008 and not significant. On the dermoscopy sets the sign flips beyond 50\,px (0.013 lower at 100\,px, 0.033 at 200\,px, $p < 10^{-20}$): anchoring to a base trained with tight boxes inherits its sensitivity to loose boxes in-domain. The rand100 regime is the other side of the trade, buying in-domain prompt robustness at a far-OOD price that the CKA loss makes worse.
 
-\begin{figure}[t]
+\begin{figure}[tbp]
   \centering
-  \includegraphics[width=0.5\linewidth]{figures/hook_ablation.png}
+  \includegraphics[width=0.36\linewidth]{figures/hook_ablation.png}
   \caption{Hook placement (LoRA, 20\,px training, tight-box evaluation, seed 0): far-OOD Dice with no regulariser, decoder hooks, encoder hooks, and both. \pending{Three-seed error bars follow once the remaining runs finish.}}
   \label{fig:hooks}
 \end{figure}

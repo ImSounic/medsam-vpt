@@ -70,3 +70,14 @@ def test_build_table_from_per_image_csvs(tmp_path):
     sub = table[(table.threshold == 0.5)]
     assert set(sub.detector) == {"iou_pred", "drift"}
     assert (sub.auroc > 0.9).all()
+
+
+def test_scatter_only_figure(tmp_path):
+    import pandas as pd
+
+    from scripts.failure_detection import make_scatter
+
+    df = pd.DataFrame({"iou_pred": [0.4, 0.5, 0.6], "dice": [0.1, 0.5, 0.9]})
+    out = tmp_path / "scatter.png"
+    make_scatter(df, out, "lora_seed0", "cbis_ddsm")
+    assert out.exists() and out.stat().st_size > 0

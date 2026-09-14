@@ -186,6 +186,27 @@ def make_figure(
     plt.close(fig)
 
 
+def make_scatter(df: pd.DataFrame, out_path: Path, run: str, dataset: str) -> None:
+    """Single-panel scatter of the IoU estimate against true Dice for one run and dataset."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(3.4, 3.2))
+    ax.scatter(df["iou_pred"], df["dice"], s=8, alpha=0.6)
+    ax.plot([0, 1], [0, 1], color="grey", lw=0.8, ls="--")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_xlabel("IoU estimate")
+    ax.set_ylabel("Dice")
+    ax.set_title(f"{run} on {dataset}", fontsize=9)
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--raw-dir", type=Path, default=REPO_ROOT / "results/accv/raw")
@@ -248,6 +269,15 @@ def main(argv: list[str] | None = None) -> int:
     fig_path = args.figure or (out_dir / "failure_detection.png")
     make_figure(table, frames, fig_path, args.thresholds[0], args.scatter_run)
     print(f"[failure-detection] figure -> {fig_path}")
+    if args.scatter_run and (args.scatter_run, "cbis_ddsm") in frames:
+        scatter_path = fig_path.with_name(fig_path.stem + "_scatter.png")
+        make_scatter(
+            frames[(args.scatter_run, "cbis_ddsm")],
+            scatter_path,
+            args.scatter_run,
+            "cbis_ddsm",
+        )
+        print(f"[failure-detection] scatter -> {scatter_path}")
     return 0
 
 
