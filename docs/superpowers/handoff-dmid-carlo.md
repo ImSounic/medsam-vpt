@@ -32,7 +32,9 @@ LZW-compressed TIFFs that PIL cannot decode.
 ```bash
 cd ~/medsam-vpt
 mkdir -p data checkpoints
-ln -s /home/s3702111/medsam-vpt/data/dmid data/dmid
+for d in dmid busi cbis-ddsm ph2 train_images train_masks val_images val_masks test_images test_masks; do
+  ln -s /home/s3702111/medsam-vpt/data/$d data/$d
+done
 ln -s /home/s3702111/medsam-vpt/checkpoints/medsam_vit_b.pth checkpoints/medsam_vit_b.pth
 for d in runs runs_perfect_bboxes runs_cka_oodonly_late runs_accv_t1; do
   ln -s /home/s3702111/medsam-vpt/checkpoints/$d checkpoints/$d
@@ -40,13 +42,16 @@ done
 ls data/dmid/ && ls checkpoints/runs/
 ```
 
+The ISIC, BUSI and CBIS links are only needed for the optional T5 training in
+section 6; DMID evaluation needs `data/dmid` and the checkpoints.
+
 If the `ls` fails with permission denied, Sounic still has to run step 3.
 
 ## 3. (Sounic) open read access
 
 ```bash
-chmod o+x ~ ~/medsam-vpt ~/medsam-vpt/data ~/medsam-vpt/checkpoints
-chmod -R o+rX ~/medsam-vpt/data/dmid ~/medsam-vpt/checkpoints
+chmod o+x ~ ~/medsam-vpt
+chmod -R o+rX ~/medsam-vpt/data ~/medsam-vpt/checkpoints
 ```
 
 ## 4. Smoke test, then submit
@@ -87,3 +92,26 @@ tar czf ~/dmid_results.tar.gz -C ~/medsam-vpt results/accv/runs_dmid.csv results
   are skipped.
 - `Pixel-level annotation/` holds the mammograms with drawn contours, not masks; unused.
 - `Info.txt` is MIAS-style (class, benign/malignant, x, y, radius); unused by the loader.
+
+## 6. Optional: run the T5 seeds while Sounic's account is upgraded
+
+T5 trains seeds 1 and 2 of the two CKA hook-ablation arms ("both" and "enc"), about
+7 to 8 hours each on an L40S, followed by their evaluation. Only if you have GPU
+hours to spare; the "both" seeds (tasks 0 and 1) matter most.
+
+```bash
+cd ~/medsam-vpt && mkdir -p logs
+T5=$(sbatch --parsable cka/slurm/accv_t5.sbatch)
+sbatch --dependency=afterany:$T5 cka/slurm/accv_t5_eval.sbatch
+squeue -u $USER --array
+```
+
+Checkpoints land in `checkpoints/runs_accv_t5/` inside your checkout. Results to send
+back: `cka/results/runs_accv_t5.csv`, `bbox_robustness/results_accv_t5/`,
+`results/accv/raw_t5/`, `results/accv/runs_cka_pm0_retrained.csv` and
+`results/accv/raw_cka_pm0_retrained/`.
+
+```bash
+tar czf ~/t5_results.tar.gz -C ~/medsam-vpt cka/results/runs_accv_t5.csv bbox_robustness/results_accv_t5 results/accv/raw_t5 results/accv/runs_cka_pm0_retrained.csv results/accv/raw_cka_pm0_retrained
+```
+
