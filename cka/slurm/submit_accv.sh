@@ -5,6 +5,10 @@
 set -euo pipefail
 cd "$HOME/medsam-vpt"
 mkdir -p logs
+# Researcher access (14 Sep 2026): account dmb, QOS research lifts the two-GPU
+# student limit. Override with SBATCH_ACCOUNT / SBATCH_QOS if needed.
+export SBATCH_ACCOUNT="${SBATCH_ACCOUNT:-dmb}"
+export SBATCH_QOS="${SBATCH_QOS:-research}"
 
 T1=$(sbatch --parsable cka/slurm/accv_t1.sbatch)
 echo "T1 array:      $T1"
