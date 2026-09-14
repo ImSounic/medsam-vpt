@@ -23,3 +23,7 @@ full_ft_seed0,full_ft,isic2018_test,0,0.9022,0.0738,0.8286,12.9453,93729252,6045
 full_ft_seed0,full_ft,ph2,0,0.9141,0.0417,0.8445,11.1669,93729252,6045,59.8,2026-09-11T03:20:26,drift;pm50
 full_ft_seed0,full_ft,busi,0,0.7678,0.1610,0.6462,29.7245,93729252,6045,181.5,2026-09-11T03:23:28,drift;pm50
 full_ft_seed0,full_ft,cbis_ddsm,0,0.3842,0.2619,0.2716,43.6328,93729252,6045,96.1,2026-09-11T03:25:04,drift;pm50
+lora_encoder_only_r28_all_seed0,lora_encoder_only,isic2018_test,0,0.9070,0.0691,0.8359,11.8834,4128768,5719,307.7,2026-09-12T05:30:12,drift;pm50
+lora_encoder_only_r28_all_seed0,lora_encoder_only,ph2,0,0.9205,0.0410,0.8552,9.2909,4128768,5719,61.9,2026-09-12T05:31:14,drift;pm50
+lora_encoder_only_r28_all_seed0,lora_encoder_only,busi,0,0.7872,0.1436,0.6685,26.7189,4128768,5719,188.5,2026-09-12T05:34:22,drift;pm50
+lora_encoder_only_r28_all_seed0,lora_encoder_only,cbis_ddsm,0,0.3756,0.2671,0.2659,53.0014,4128768,5719,97.0,2026-09-12T05:35:59,drift;pm50

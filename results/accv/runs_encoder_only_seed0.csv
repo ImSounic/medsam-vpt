@@ -1,0 +1,5 @@
+run_name,method,dataset,seed,dice_mean,dice_std,iou_mean,hd95_mean,trainable_params,peak_mem_mb,wall_clock_s,timestamp,notes
+lora_encoder_only_r28_all_seed0,lora_encoder_only,isic2018_test,0,0.9577,0.0375,0.9211,3.3238,4128768,5305,227.9,2026-09-12T05:09:28,pm0
+lora_encoder_only_r28_all_seed0,lora_encoder_only,ph2,0,0.9591,0.0242,0.9223,2.1732,4128768,5305,45.5,2026-09-12T05:10:14,pm0
+lora_encoder_only_r28_all_seed0,lora_encoder_only,busi,0,0.9075,0.0652,0.8364,11.0851,4128768,5305,139.3,2026-09-12T05:12:33,pm0
+lora_encoder_only_r28_all_seed0,lora_encoder_only,cbis_ddsm,0,0.8212,0.1247,0.7103,8.6174,4128768,5305,72.0,2026-09-12T05:13:45,pm0
