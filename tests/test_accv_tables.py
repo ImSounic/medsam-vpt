@@ -73,3 +73,53 @@ def test_detector_table_marks_low_failure_counts(tmp_path):
         "--", ""
     )  # low-count cells blanked
     assert "--" in tex
+
+
+def test_detector_table_can_show_auprc(tmp_path):
+    m = tmp_path / "detector_metrics.csv"
+    pd.DataFrame(
+        [
+            {
+                "run_name": "lora_seed0",
+                "dataset": "busi",
+                "detector": "drift",
+                "threshold": 0.5,
+                "auroc": 0.912,
+                "auprc": 0.747,
+                "n": 647,
+                "n_fail": 120,
+            },
+            {
+                "run_name": "lora_seed0",
+                "dataset": "busi",
+                "detector": "iou_pred",
+                "threshold": 0.5,
+                "auroc": 0.692,
+                "auprc": 0.189,
+                "n": 647,
+                "n_fail": 120,
+            },
+            {
+                "run_name": "lora_seed0",
+                "dataset": "cbis_ddsm",
+                "detector": "drift",
+                "threshold": 0.5,
+                "auroc": 0.757,
+                "auprc": 0.831,
+                "n": 362,
+                "n_fail": 270,
+            },
+            {
+                "run_name": "lora_seed0",
+                "dataset": "cbis_ddsm",
+                "detector": "iou_pred",
+                "threshold": 0.5,
+                "auroc": 0.444,
+                "auprc": 0.405,
+                "n": 362,
+                "n_fail": 270,
+            },
+        ]
+    ).to_csv(m, index=False)
+    tex = detector_table_tex(m, threshold=0.5, with_auprc=True)
+    assert "0.91 / 0.75" in tex and "0.44 / 0.41" in tex

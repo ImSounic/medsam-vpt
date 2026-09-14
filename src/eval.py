@@ -247,13 +247,13 @@ def evaluate(cfg: dict, args: argparse.Namespace) -> int:
         base_sam = load_medsam(base_ckpt, arch=cfg["model"]["arch"], device=device)
         setup_method(base_sam, "zero_shot")
         base_sam.eval()
-        cur_hook = register_hooks(
-            sam, ["decoder_upscaling"], detach=True, accumulate=True
-        )
-        base_hook = register_hooks(
-            base_sam, ["decoder_upscaling"], detach=True, accumulate=True
-        )
         shares_encoder = not encoder_in_grad_path(method)
+        # Encoder drift (neck output) is only defined when the encoder was adapted.
+        hook_layers = ["decoder_upscaling"] + (
+            [] if shares_encoder else ["encoder_neck"]
+        )
+        cur_hook = register_hooks(sam, hook_layers, detach=True, accumulate=True)
+        base_hook = register_hooks(base_sam, hook_layers, detach=True, accumulate=True)
         print(f"[eval] drift enabled (base encoder reused: {shares_encoder})")
 
     reset_peak_memory(device)
@@ -282,25 +282,40 @@ def evaluate(cfg: dict, args: argparse.Namespace) -> int:
                 bboxes = batch["bbox"].to(device)
                 masks_gt = batch["mask"].cpu().numpy()
                 H, W = images.shape[-2:]
-                embeddings = sam.image_encoder(images)
                 if cur_hook is not None:
                     cur_hook.clear()
+                embeddings = sam.image_encoder(images)
                 preds, iou_preds = predict_from_embeddings_with_iou(
                     sam, embeddings, bboxes, H, W
                 )
-                drifts = None
+                drifts = drifts_enc = None
                 if base_sam is not None:
-                    base_emb = (
-                        embeddings if shares_encoder else base_sam.image_encoder(images)
-                    )
-                    base_hook.clear()
+                    if shares_encoder:
+                        base_emb = embeddings
+                    else:
+                        base_hook.clear()
+                        base_emb = base_sam.image_encoder(images)
                     predict_from_embeddings_with_iou(base_sam, base_emb, bboxes, H, W)
-                    cur_acts = cur_hook.stacked()["decoder_upscaling"]
-                    base_acts = base_hook.stacked()["decoder_upscaling"]
+                    cur_acts = cur_hook.stacked()
+                    base_acts = base_hook.stacked()
+                    dec_c, dec_b = (
+                        cur_acts["decoder_upscaling"],
+                        base_acts["decoder_upscaling"],
+                    )
                     drifts = [
-                        decoder_drift(base_acts[j], cur_acts[j])
-                        for j in range(cur_acts.shape[0])
+                        decoder_drift(dec_b[j], dec_c[j]) for j in range(dec_c.shape[0])
                     ]
+                    if shares_encoder:
+                        drifts_enc = [0.0] * len(drifts)
+                    else:
+                        enc_c, enc_b = (
+                            cur_acts["encoder_neck"],
+                            base_acts["encoder_neck"],
+                        )
+                        drifts_enc = [
+                            decoder_drift(enc_b[j], enc_c[j])
+                            for j in range(enc_c.shape[0])
+                        ]
                     cur_hook.clear()
                     base_hook.clear()
                 preds_np = preds.cpu().numpy()
@@ -321,6 +336,7 @@ def evaluate(cfg: dict, args: argparse.Namespace) -> int:
                     }
                     if drifts is not None:
                         row["drift"] = float(drifts[j])
+                        row["drift_enc"] = float(drifts_enc[j])
                     per_image_rows.append(row)
         elapsed = time.time() - t0
 

@@ -66,6 +66,7 @@ def test_t3_array_covers_two_prompt_levels():
         "accv_dmid.sbatch",
         "accv_t6.sbatch",
         "accv_t6_eval.sbatch",
+        "accv_t7.sbatch",
         "submit_accv.sh",
         "sync_to_hpc.sh",
     ],
@@ -84,7 +85,9 @@ def test_t4_eval_covers_pm0_sweep_and_encoder_only_dumps():
     text = (SLURM / "accv_t4_eval.sbatch").read_text()
     assert "results_cka_oodonly_late_l10_pm0" in text
     assert "lora_encoder_only_r28_all_seed0/best.pth" in text
-    assert "--drift" in text and "for PM in 0 50" in text and "runs_t3_pm${PM}.csv" in text
+    assert (
+        "--drift" in text and "for PM in 0 50" in text and "runs_t3_pm${PM}.csv" in text
+    )
 
 
 def test_t5_eval_covers_seeds_and_retrained_pm0_tight_eval():
@@ -93,3 +96,13 @@ def test_t5_eval_covers_seeds_and_retrained_pm0_tight_eval():
     assert "runs_accv_t5.csv" in text and "results_accv_t5" in text
     assert "runs_cka_oodonly_late/lora_cka_oodonly_late_l10_seed0/best.pth" in text
     assert "runs_cka_pm0_retrained.csv" in text
+
+
+def test_t7_covers_budget_and_full_data_checkpoints():
+    text = (SLURM / "accv_t7.sbatch").read_text()
+    ck = _bash_array(text, "CHECKPOINTS")
+    assert (
+        len(ck) == 12
+        and sum("runs_accv_t2" in c for c in ck) == 9
+        and "--drift" in text
+    )

@@ -70,6 +70,7 @@ def detector_table_tex(
     threshold: float = 0.5,
     datasets=("busi", "cbis_ddsm"),
     min_fail: int = 20,
+    with_auprc: bool = False,
 ) -> str:
     m = pd.read_csv(metrics_csv)
     m = m[m.threshold == threshold]
@@ -97,6 +98,10 @@ def detector_table_tex(
                     and det == "drift"
                 ):
                     cells.append("--")
+                elif with_auprc:
+                    cells.append(
+                        f"{float(cell.auroc.iloc[0]):.2f} / {float(cell.auprc.iloc[0]):.2f}"
+                    )
                 else:
                     cells.append(f"{float(cell.auroc.iloc[0]):.2f}")
         lines.append(f"{METHOD_LABEL.get(run, run)} & " + " & ".join(cells) + r" \\")
@@ -129,7 +134,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
     (args.out_dir / "detectors_pm50.tex").write_text(
-        detector_table_tex(args.detector_csv)
+        detector_table_tex(args.detector_csv, with_auprc=True)
     )
     if args.detector_csv_tight.exists():
         (args.out_dir / "detectors_pm0.tex").write_text(

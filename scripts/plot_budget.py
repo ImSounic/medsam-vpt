@@ -72,6 +72,73 @@ def budget_summary(budget_csv: Path, full_csv: Path):
     return summary, first_drop
 
 
+def drift_summary(raw_dir: Path) -> pd.DataFrame:
+    """Mean per-image decoder and encoder drift per (method, budget): in-domain and far-OOD (mean of BUSI, CBIS-DDSM)."""
+    rows = {}
+    for p in sorted(Path(raw_dir).glob("*_per_image.csv")):
+        name = p.name[: -len("_per_image.csv")]
+        for ds in [ID_SET] + FAR_OOD:
+            if name.endswith("_" + ds):
+                run = name[: -len(ds) - 1]
+                parsed = parse_budget_run(run)
+                if parsed is None:
+                    continue
+                df = pd.read_csv(p)
+                key = parsed
+                rows.setdefault(key, {})[ds] = (
+                    float(df["drift"].mean()),
+                    (
+                        float(df["drift_enc"].mean())
+                        if "drift_enc" in df.columns
+                        else float("nan")
+                    ),
+                )
+    out = []
+    for (method, budget), per_ds in rows.items():
+        far = [per_ds[d] for d in FAR_OOD if d in per_ds]
+        out.append(
+            {
+                "method": method,
+                "budget": budget,
+                "id_drift": per_ds.get(ID_SET, (float("nan"), float("nan")))[0],
+                "id_drift_enc": per_ds.get(ID_SET, (float("nan"), float("nan")))[1],
+                "far_ood_drift": (
+                    sum(v[0] for v in far) / len(far) if far else float("nan")
+                ),
+                "far_ood_drift_enc": (
+                    sum(v[1] for v in far) / len(far) if far else float("nan")
+                ),
+            }
+        )
+    return pd.DataFrame(out)
+
+
+def make_drift_figure(drift: pd.DataFrame, out: Path) -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(1, 2, figsize=(8.5, 3.4))
+    for ax, col, title in zip(
+        axes,
+        ["far_ood_drift", "far_ood_drift_enc"],
+        ["Decoder drift (far-OOD)", "Encoder drift (far-OOD)"],
+    ):
+        for method, g in drift.groupby("method"):
+            g = g.sort_values("budget")
+            ax.plot(g.budget, g[col], marker="o", label=method)
+        ax.set_xscale("log")
+        ax.set_xlabel("training images")
+        ax.set_ylabel("1 - CKA to base")
+        ax.set_title(title)
+        ax.legend(fontsize=7)
+    fig.tight_layout()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=200)
+    plt.close(fig)
+
+
 def make_figure(summary: pd.DataFrame, out: Path) -> None:
     import matplotlib
 
@@ -110,6 +177,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--out", type=Path, default=REPO_ROOT / "figures/accv/budget_curves.png"
     )
+    ap.add_argument(
+        "--drift-raw-dir",
+        type=Path,
+        default=None,
+        help="Per-image files with drift columns (T7) for the drift panel",
+    )
     args = ap.parse_args(argv)
     summary, first_drop = budget_summary(args.budget_csv, args.full_csv)
     args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -121,6 +194,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[budget] {method}: first budget below zero-shot far-OOD = {b}")
     make_figure(summary, args.out)
     print(f"[budget] figure -> {args.out}")
+    if args.drift_raw_dir is not None:
+        drift = drift_summary(args.drift_raw_dir)
+        drift_out = args.out.with_name(args.out.stem + "_drift.png")
+        drift.sort_values(["method", "budget"]).to_csv(
+            drift_out.with_suffix(".csv"), index=False
+        )
+        print(drift.sort_values(["method", "budget"]).round(4).to_string(index=False))
+        make_drift_figure(drift, drift_out)
+        print(f"[budget] drift figure -> {drift_out}")
     return 0
 
 

@@ -69,3 +69,28 @@ def test_per_image_csv_columns(tmp_path):
     with open(p) as f:
         header = next(csv.reader(f))
     assert header == ["image_id", "dice", "iou", "hd95", "iou_pred", "drift"]
+
+
+def test_drift_works_on_encoder_neck_shape():
+    a = torch.randn(1, 256, 64, 64)
+    b = torch.randn(1, 256, 64, 64)
+    assert abs(decoder_drift(a, a)) < 1e-5
+    assert decoder_drift(a, b) > 0.5
+
+
+def test_per_image_csv_keeps_encoder_drift_column(tmp_path):
+    rows = [
+        {
+            "image_id": "x",
+            "dice": 0.9,
+            "iou": 0.8,
+            "hd95": 3.0,
+            "iou_pred": 0.85,
+            "drift": 0.1,
+            "drift_enc": 0.02,
+        }
+    ]
+    p = write_per_image_csv(tmp_path / "c.csv", rows)
+    with open(p) as f:
+        header = next(csv.reader(f))
+    assert header[-2:] == ["drift", "drift_enc"]
