@@ -46,7 +46,8 @@ python scripts/download_medsam.py      # base weights -> checkpoints/medsam_vit_
 ```
 
 The job scripts activate this environment by name (`conda activate medsam-vpt`), so
-keep the name.
+keep the name. Install everything on the head node: compute nodes have no internet,
+so a missing package fails the job rather than being installed on the fly.
 
 ## 3. Download the datasets into your own checkout (copy-paste)
 
