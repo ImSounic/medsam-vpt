@@ -16,7 +16,9 @@ cd "$REPO"
 mkdir -p logs results/accv
 source /software/anaconda3/2025.06/etc/profile.d/conda.sh
 conda activate medsam-vpt
-python -c "import tifffile, imagecodecs" 2>/dev/null || pip install --quiet tifffile imagecodecs
+# Compute nodes have no internet: install once on the head node with
+#   pip install tifffile imagecodecs
+python -c "import tifffile, imagecodecs" || { echo "[accv_dmid] tifffile/imagecodecs missing in the env; install them on the head node first"; exit 1; }
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export LANG=en_US.UTF-8
 export PYTHONUNBUFFERED=1
