@@ -44,34 +44,61 @@ runs (three methods x three budgets x seeds 1 and 2, 15 to 35 minutes each) turn
 into a three-seed figure. Configs are `configs/budget/*_seed{1,2}.yaml`; the image
 subsets are identical to seed 0, only the model initialisation and data order change.
 
-### Data you need in your own checkout
+### Data you need in your own checkout (copy-paste, run on the head node)
 
-Sounic's home is not group-readable, so download the public datasets on the head
-node into `~/medsam-vpt/data/` with this layout (see also `handoff.md` in the repo):
+Sounic's home is not group-readable, so the datasets are downloaded fresh. Total
+about 20 GB; every command below was checked on 14 September 2026. Run them from
+`~/medsam-vpt`.
 
-```
-data/train_images/  data/train_masks/     ISIC 2018 Task 1 training (2594 pairs)
-data/val_images/    data/val_masks/       ISIC 2018 Task 1 validation (100 pairs)
-data/test_images/   data/test_masks/      ISIC 2018 Task 1 test (1000 pairs)
-data/ph2/trainx/    data/ph2/trainy/      PH2 (200 pairs, Kaggle redistribution)
-data/busi/benign/   data/busi/malignant/  BUSI (Kaggle "breast-ultrasound-images-dataset")
-data/cbis-ddsm/csv/ data/cbis-ddsm/jpeg/  CBIS-DDSM (Kaggle "cbis-ddsm-breast-cancer-image-dataset")
-```
-
-Sources: ISIC 2018 from https://challenge.isic-archive.com/data/ (Task 1 training,
-validation and test images plus ground truth); BUSI, PH2 and CBIS-DDSM via the
-Kaggle API (`pip install kaggle`, token in `~/.kaggle/kaggle.json`). Expected file
-counts after unpacking: 2595, 2595, 101, 101, 1001, 1001 in the six ISIC folders (one
-LICENSE.txt each), 400 in `ph2`, 1578 in `busi`, 10243 in `cbis-ddsm`. Also
-`checkpoints/medsam_vit_b.pth`: `python scripts/download_medsam.py`.
-
-Sanity check before submitting (CPU, about a minute):
+**ISIC 2018 Task 1** (six public archives on the challenge's S3 bucket; the loader
+expects `data/{train,val,test}_{images,masks}/`):
 
 ```bash
-python -c "from src.data.isic import ISIC2018; from src.data.busi import BUSI; from src.data.cbis_ddsm import CBISDDSM; print(len(ISIC2018('data','train')), len(BUSI('data/busi')), len(CBISDDSM('data/cbis-ddsm','test')), len(CBISDDSM('data/cbis-ddsm','train')))"
+mkdir -p data && cd data
+B=https://isic-challenge-data.s3.amazonaws.com/2018
+for f in ISIC2018_Task1-2_Training_Input ISIC2018_Task1_Training_GroundTruth \
+         ISIC2018_Task1-2_Validation_Input ISIC2018_Task1_Validation_GroundTruth \
+         ISIC2018_Task1-2_Test_Input ISIC2018_Task1_Test_GroundTruth; do
+  curl -L --retry 5 -C - -o $f.zip $B/$f.zip && unzip -q $f.zip && rm $f.zip
+done
+mv ISIC2018_Task1-2_Training_Input train_images;    mv ISIC2018_Task1_Training_GroundTruth train_masks
+mv ISIC2018_Task1-2_Validation_Input val_images;    mv ISIC2018_Task1_Validation_GroundTruth val_masks
+mv ISIC2018_Task1-2_Test_Input test_images;         mv ISIC2018_Task1_Test_GroundTruth test_masks
+cd ..
 ```
 
-Expected: `2594 647 362 2458`.
+**BUSI and CBIS-DDSM** (Kaggle; needs `pip install kaggle` and an API token in
+`~/.kaggle/kaggle.json` from your Kaggle account page):
+
+```bash
+kaggle datasets download -d aryashah2k/breast-ultrasound-images-dataset -p data/tmp_busi --unzip
+mv data/tmp_busi/Dataset_BUSI_with_GT data/busi && rm -rf data/tmp_busi
+kaggle datasets download -d awsaf49/cbis-ddsm-breast-cancer-image-dataset -p data/cbis-ddsm --unzip
+ls data/cbis-ddsm/csv/dicom_info.csv data/cbis-ddsm/jpeg | head -3
+```
+
+**PH2** (200 images, 265 MB): request it from the official ADDI page
+(https://www.fc.up.pt/addi/ph2%20database.html, RAR archive; the loader accepts the
+original per-image folder layout under `data/ph2/`), or use the copy Sounic sends you
+and unpack it to `data/ph2/`.
+
+**Base weights:** `python scripts/download_medsam.py` writes
+`checkpoints/medsam_vit_b.pth` (375 MB). No trained checkpoints are needed for T6;
+it trains its own.
+
+Expected file counts: `train_images` 2595, `train_masks` 2595, `val_images` 101,
+`val_masks` 101, `test_images` 1001, `test_masks` 1001 (each image folder holds one
+`LICENSE.txt`), `ph2` 400, `busi` 1578, `cbis-ddsm` 10243:
+
+```bash
+for d in train_images train_masks val_images val_masks test_images test_masks ph2 busi cbis-ddsm; do printf "%-12s %6d\n" $d "$(find data/$d -type f | wc -l)"; done
+```
+
+Loader sanity check (CPU, about a minute), expected `2594 647 362 2458 200`:
+
+```bash
+python -c "from src.data.isic import ISIC2018; from src.data.busi import BUSI; from src.data.cbis_ddsm import CBISDDSM; from src.data.ph2 import PH2; print(len(ISIC2018('data','train')), len(BUSI('data/busi')), len(CBISDDSM('data/cbis-ddsm','test')), len(CBISDDSM('data/cbis-ddsm','train')), len(PH2('data/ph2')))"
+```
 
 ### Submit
 
