@@ -6,16 +6,16 @@ only, no training. Kill date for including DMID in the ACCV paper: 16 September.
 
 ## What you receive
 
-- `medsam-vpt-accv-trustfmi.bundle`: the repo, branch `accv-trustfmi`, with the DMID
-  loader (`src/data/dmid.py`), the eval config (`configs/accv_dmid_eval.yaml`) and the
-  SLURM job (`cka/slurm/accv_dmid.sbatch`).
-- Read access to Sounic's data and checkpoints on the cluster (see step 3), so nothing
-  large has to be copied.
+- Collaborator access to the private GitHub repo `ImSounic/medsam-vpt`, branch
+  `accv-trustfmi`. It contains the DMID loader (`src/data/dmid.py`), the eval config
+  (`configs/accv_dmid_eval.yaml`), the SLURM job (`cka/slurm/accv_dmid.sbatch`) and all
+  result CSVs so far. Results you produce go back on the same branch (see step 5).
+- The data and checkpoints by one of the two routes in step 2.
 
 ## 1. Clone and environment (head node hpc-head2)
 
 ```bash
-git clone -b accv-trustfmi ~/medsam-vpt-accv-trustfmi.bundle ~/medsam-vpt
+git clone -b accv-trustfmi https://github.com/ImSounic/medsam-vpt.git ~/medsam-vpt
 cd ~/medsam-vpt
 source /software/anaconda3/2025.06/etc/profile.d/conda.sh
 conda create -n medsam-vpt python=3.10 -y
@@ -27,32 +27,36 @@ pip install -r requirements.txt
 `requirements.txt` includes `tifffile` and `imagecodecs`; the DMID masks are
 LZW-compressed TIFFs that PIL cannot decode.
 
-## 2. Data and checkpoints (symlinks into Sounic's home)
+## 2. Data and checkpoints
+
+DMID evaluation needs `data/dmid` (8.3 GB), `checkpoints/medsam_vit_b.pth` (375 MB)
+and the checkpoints listed in `cka/slurm/accv_dmid.sbatch` (about 1 GB). Sounic will
+tell you which route applies.
+
+**Route A: shared group directory on the cluster** (if `/projects/<dmb group>` exists).
+Sounic places `data/` and `checkpoints/` there; you symlink:
 
 ```bash
 cd ~/medsam-vpt
-mkdir -p data checkpoints
-for d in dmid busi cbis-ddsm ph2 train_images train_masks val_images val_masks test_images test_masks; do
-  ln -s /home/s3702111/medsam-vpt/data/$d data/$d
-done
-ln -s /home/s3702111/medsam-vpt/checkpoints/medsam_vit_b.pth checkpoints/medsam_vit_b.pth
-for d in runs runs_perfect_bboxes runs_cka_oodonly_late runs_accv_t1; do
-  ln -s /home/s3702111/medsam-vpt/checkpoints/$d checkpoints/$d
-done
+SHARED=/projects/<path Sounic gives you>/medsam-vpt
+ln -s "$SHARED/data" data
+ln -s "$SHARED/checkpoints" checkpoints
 ls data/dmid/ && ls checkpoints/runs/
 ```
 
-The ISIC, BUSI and CBIS links are only needed for the optional T5 training in
-section 6; DMID evaluation needs `data/dmid` and the checkpoints.
-
-If the `ls` fails with permission denied, Sounic still has to run step 3.
-
-## 3. (Sounic) open read access
+**Route B: file transfer.** Sounic shares an archive (SURFdrive or Google Drive link);
+download it on the head node and unpack into the checkout:
 
 ```bash
-chmod o+x ~ ~/medsam-vpt
-chmod -R o+rX ~/medsam-vpt/data ~/medsam-vpt/checkpoints
+cd ~/medsam-vpt
+curl -L -o dmid_bundle.tar "<link>"
+tar xf dmid_bundle.tar      # creates data/dmid and checkpoints/...
+ls data/dmid/ && ls checkpoints/runs/
 ```
+
+## 3. Nothing to do here
+
+(Kept so the section numbers match earlier messages.)
 
 ## 4. Smoke test, then submit
 
@@ -77,11 +81,12 @@ Zero-shot is the first evaluation in the log. CBIS-DDSM zero-shot Dice is 0.69; 
 DMID zero-shot between about 0.55 and 0.85 is sane. Below 0.4 means a mask or
 orientation problem; stop and report.
 
-Outputs to send back (small): `results/accv/runs_dmid.csv` (one row per checkpoint)
-and the directory `results/accv/raw_dmid/` (per-image Dice, IoU, HD95, iou_pred, drift).
+Outputs: `results/accv/runs_dmid.csv` (one row per checkpoint) and the directory
+`results/accv/raw_dmid/` (per-image Dice, IoU, HD95, iou_pred, drift). Commit and push
+them on the branch:
 
 ```bash
-tar czf ~/dmid_results.tar.gz -C ~/medsam-vpt results/accv/runs_dmid.csv results/accv/raw_dmid
+cd ~/medsam-vpt && git add results/accv/runs_dmid.csv results/accv/raw_dmid && git commit -m "results: DMID evaluation" && git push
 ```
 
 ## Notes on the dataset
@@ -106,12 +111,11 @@ sbatch --dependency=afterany:$T5 cka/slurm/accv_t5_eval.sbatch
 squeue -u $USER --array
 ```
 
-Checkpoints land in `checkpoints/runs_accv_t5/` inside your checkout. Results to send
-back: `cka/results/runs_accv_t5.csv`, `bbox_robustness/results_accv_t5/`,
-`results/accv/raw_t5/`, `results/accv/runs_cka_pm0_retrained.csv` and
-`results/accv/raw_cka_pm0_retrained/`.
+T5 also needs the ISIC, BUSI and CBIS-DDSM data (route A gives them automatically).
+Checkpoints land in `checkpoints/runs_accv_t5/` inside your checkout (gitignored; Sounic
+will fetch them if needed). Commit and push the results:
 
 ```bash
-tar czf ~/t5_results.tar.gz -C ~/medsam-vpt cka/results/runs_accv_t5.csv bbox_robustness/results_accv_t5 results/accv/raw_t5 results/accv/runs_cka_pm0_retrained.csv results/accv/raw_cka_pm0_retrained
+cd ~/medsam-vpt && git add cka/results/runs_accv_t5.csv bbox_robustness/results_accv_t5/runs.csv results/accv/raw_t5 results/accv/runs_cka_pm0_retrained.csv results/accv/raw_cka_pm0_retrained && git commit -m "results: T5 hook-ablation seeds" && git push
 ```
 
