@@ -1,0 +1,11 @@
+\section{Results: Adaptation Budget}
+\label{sec:res_budget}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.85\linewidth]{figures/budget_curves.png}
+  \caption{Dice against training images (log axis) for three adapters trained for a fixed 6000 steps; dashed: zero-shot. Left: in-domain (ISIC test). Right: far-OOD, mean of BUSI and CBIS-DDSM. Single seed.}
+  \label{fig:budget}
+\end{figure}
+
+Figure~\ref{fig:budget} shows how the collapse depends on how much of the target domain the adapter sees. Decoder-only fine-tuning and encoder-only LoRA improve on both axes with every increase in budget and stay above the zero-shot far-OOD reference of 0.758 throughout (0.847 to 0.861 and 0.811 to 0.864). LoRA with a trainable decoder is the only method that crosses it: level with the others at 50 images (0.818), it falls to 0.635 at 250, partly recovers to 0.760 at 1000 and ends at 0.638 with all 2595 images, while its in-domain Dice rises monotonically to the best of the three. The collapse is thus not a symptom of too little data or of repeated passes over the same images, since every budget receives 6000 steps; it appears as soon as a few hundred in-domain images reach a model whose decoder is free to move, and more data does not undo it. The non-monotonic shape between 250 and 1000 images is a single-seed observation that we do not interpret.

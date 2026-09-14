@@ -1,0 +1,38 @@
+\section{Method}
+\label{sec:method}
+
+$f_\theta$ denotes MedSAM with image encoder $E_\theta$ and mask decoder $D_\theta$, $\theta_0$ its released weights and $\theta$ the weights during adaptation; prompts are single boxes.
+
+\subsection{CKA-regularised adaptation}
+\label{sec:cka_loss}
+
+For activation matrices $X \in \mathbb{R}^{n \times p}$ and $Y \in \mathbb{R}^{n \times q}$ with centred columns, linear CKA is
+\begin{equation}
+  \mathrm{CKA}(X, Y) = \frac{\lVert Y^\top X \rVert_F^2}{\lVert X^\top X \rVert_F \,\lVert Y^\top Y \rVert_F} \in [0,1],
+\end{equation}
+invariant to orthogonal transformation and isotropic scaling of either side~\cite{kornblith2019cka}. Let $P$ be a fixed probe batch of $n$ images with boxes and $A_\ell(\theta; P)$ the activation captured by a forward hook at layer $\ell$, one row per probe image. With $A_\ell(\theta_0; P)$ cached once, the training objective is
+\begin{equation}
+  \mathcal{L} = \mathcal{L}_{\text{task}} + \lambda \sum_{\ell \in H} w_\ell \bigl(1 - \mathrm{CKA}\bigl(A_\ell(\theta_0; P), A_\ell(\theta; P)\bigr)\bigr),
+  \label{eq:loss}
+\end{equation}
+where $H$ is the set of hooked layers, $w_\ell$ per-layer weights and $\mathcal{L}_{\text{task}}$ the equally weighted sum of binary cross-entropy and soft Dice. The probe forward runs every fourth step with $\lambda$ multiplied by four, which keeps the expected regularisation gradient per step and quarters its cost; CKA terms are computed in single precision. The probe is OOD-only: 16 breast-ultrasound and 16 mammography images drawn once from the training splits of those datasets and absent from every evaluation set, each with a synthetic centred box covering half the image. No in-domain images are included, because the task loss already governs in-domain behaviour and an in-domain anchor competes with it. We use $\lambda = 10$, chosen in preliminary single-seed runs over $\{0.1, 1, 10\}$.
+
+\subsection{Hook placement}
+\label{sec:hooks}
+
+\emph{Decoder} hooks capture the output of the decoder's upscaling block ($32 \times 256 \times 256$), the IoU prediction head and the mask logits, with $w_\ell = 0.8$, $1.5$ and $1.0$, following the strength of the per-layer correlation reported in prior work~\cite{prior2026safer}. \emph{Encoder} hooks capture the neck output ($256 \times 64 \times 64$) and the outputs of the last two transformer blocks ($64 \times 64 \times 768$), each with $w_\ell = 1$. \emph{Both} is the union. Every configuration backpropagates through the encoder, where the LoRA weights live; the positions differ only in which representation is anchored.
+
+\subsection{Adaptation-budget protocol}
+\label{sec:budget}
+
+One fixed permutation of the training set (seed 0) supplies its first 50, 250 and 1000 images, so smaller budgets are prefixes of larger ones and every method sees identical images. Each run performs 6000 optimiser steps at batch size one under a cosine schedule, validating every 500 steps and keeping the best checkpoint; the full-data point is each method's seed-0 checkpoint. Prompts are tight.
+
+\subsection{Per-image failure signals}
+\label{sec:detector}
+
+For a test image $x$ with box $b$, two label-free signals are available. The first is the decoder's IoU estimate $\hat{u}(x, b)$, a scalar SAM predicts alongside each mask~\cite{kirillov2023sam} and that adaptation updates with the rest of the decoder. The second is the decoder drift
+\begin{equation}
+  d(x, b) = 1 - \mathrm{CKA}\bigl(U_{\theta_0}(x, b),\, U_{\theta}(x, b)\bigr),
+  \label{eq:drift}
+\end{equation}
+where $U(x,b) \in \mathbb{R}^{65536 \times 32}$ is the decoder's upscaled mask embedding for that image and prompt, with the $256 \times 256$ positions as samples and the 32 channels as features. It costs one extra base decoder forward per image, plus a base encoder forward when the encoder was adapted. A failure is a prediction with Dice below 0.5; both signals are scored by AUROC and AUPRC (high drift or low $\hat{u}$ positive), and $\hat{u}$ is compared with the true IoU by a ten-bin expected calibration error.

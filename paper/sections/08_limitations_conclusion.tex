@@ -1,0 +1,6 @@
+\section{Limitations and Conclusion}
+\label{sec:limits}
+
+The ladder is asymmetric: all models are adapted on dermoscopy and tested toward ultrasound and mammography, and we have not shown that the anchors help when a far-OOD set is the training domain. The budget study is single-seed. The CKA loss adds about 30 percent to training time and the drift detector doubles inference cost when the encoder is adapted. The hook-placement result rests on \pending{three seeds for the decoder arm and one for the other arms until the remaining runs complete}. The regularised model inherits the base's sensitivity to loose boxes in-domain, so it suits tight or lightly jittered prompts and deployment far from the training domain rather than every setting.
+
+Within those bounds the evidence points one way. Far-OOD failure of adapted MedSAM arises where the mask decoder's representations leave the base model's; an anchor there removes much of the failure at no in-domain cost, an anchor on the encoder alone makes it worse, and the size of that departure on a single image predicts whether the prediction has failed. Protecting the decoder during adaptation and monitoring it at inference are two uses of one quantity, both cheap enough to be default practice when a medical foundation model is adapted in one domain and used in another.
