@@ -29,6 +29,7 @@ def _bash_array(text: str, name: str) -> list[str]:
         ("accv_t2.sbatch", "CONFIGS", 9),
         ("accv_t4.sbatch", "CONFIGS", 2),
         ("accv_t5.sbatch", "CONFIGS", 4),
+        ("accv_t6.sbatch", "CONFIGS", 18),
     ],
 )
 def test_train_arrays_match_configs(script, var, n):
@@ -63,6 +64,8 @@ def test_t3_array_covers_two_prompt_levels():
         "accv_t5.sbatch",
         "accv_t5_eval.sbatch",
         "accv_dmid.sbatch",
+        "accv_t6.sbatch",
+        "accv_t6_eval.sbatch",
         "submit_accv.sh",
         "sync_to_hpc.sh",
     ],

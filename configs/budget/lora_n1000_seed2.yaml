@@ -1,0 +1,40 @@
+# Adaptation-budget run (ACCV TrustFMI spec 5.1): lora on 1000 ISIC images,
+# 6000 optimiser steps at batch 1, cosine over steps, val every 500 steps.
+
+name: lora_n1000_seed2
+method: lora
+seed: 2
+
+method_kwargs:
+  rank: 8
+  alpha: 16
+  dropout: 0.0
+
+model:
+  arch: vit_b
+  checkpoint: checkpoints/medsam_vit_b.pth
+  image_size: 1024
+
+data:
+  root: data
+  bbox_perturb_pixels: 0
+  max_train_samples: 1000
+  subset_seed: 0
+
+train:
+  batch_size: 1
+  num_workers: 8
+  max_steps: 6000
+  val_every_steps: 500
+  lr: 5.0e-4
+  weight_decay: 0.0
+  dice_weight: 0.5
+  amp: true
+  cooldown_seconds: 0
+
+eval:
+  batch_size: 1
+  num_workers: 4
+
+output:
+  checkpoint_dir: checkpoints/runs_accv_t6

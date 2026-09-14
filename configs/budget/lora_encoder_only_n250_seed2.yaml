@@ -1,0 +1,41 @@
+# Adaptation-budget run (ACCV TrustFMI spec 5.1): lora_encoder_only on 250 ISIC images,
+# 6000 optimiser steps at batch 1, cosine over steps, val every 500 steps.
+
+name: lora_encoder_only_n250_seed2
+method: lora_encoder_only
+seed: 2
+
+method_kwargs:
+  rank: 28
+  alpha: 56
+  dropout: 0.0
+  target_modules: all
+
+model:
+  arch: vit_b
+  checkpoint: checkpoints/medsam_vit_b.pth
+  image_size: 1024
+
+data:
+  root: data
+  bbox_perturb_pixels: 0
+  max_train_samples: 250
+  subset_seed: 0
+
+train:
+  batch_size: 1
+  num_workers: 8
+  max_steps: 6000
+  val_every_steps: 500
+  lr: 5.0e-4
+  weight_decay: 0.0
+  dice_weight: 0.5
+  amp: true
+  cooldown_seconds: 0
+
+eval:
+  batch_size: 1
+  num_workers: 4
+
+output:
+  checkpoint_dir: checkpoints/runs_accv_t6

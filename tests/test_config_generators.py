@@ -90,3 +90,14 @@ def test_budget_configs(tmp_path):
     assert cfgs["decoder_only_n50_seed0"]["train"]["lr"] == 1.0e-4
     assert cfgs["lora_n1000_seed0"]["train"]["lr"] == 5.0e-4
     assert "method_kwargs" not in cfgs["decoder_only_n50_seed0"]
+
+
+def test_budget_configs_for_extra_seeds(tmp_path):
+    paths = emit_budget_configs(tmp_path, seeds=(1, 2))
+    assert len(paths) == 18
+    names = sorted(p.stem for p in paths)
+    assert "lora_n50_seed1" in names and "decoder_only_n1000_seed2" in names
+    c = _load(tmp_path / "lora_n250_seed2.yaml")
+    assert c["seed"] == 2 and c["name"] == "lora_n250_seed2"
+    assert c["data"]["subset_seed"] == 0  # same images for every seed
+    assert c["output"]["checkpoint_dir"] == "checkpoints/runs_accv_t6"

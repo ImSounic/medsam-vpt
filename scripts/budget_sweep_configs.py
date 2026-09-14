@@ -24,7 +24,7 @@ TEMPLATE = """# Adaptation-budget run (ACCV TrustFMI spec 5.1): {method} on {bud
 
 name: {run_name}
 method: {method}
-seed: 0
+seed: {seed}
 {kwargs_block}
 model:
   arch: vit_b
@@ -53,7 +53,7 @@ eval:
   num_workers: 4
 
 output:
-  checkpoint_dir: checkpoints/runs_accv_t2
+  checkpoint_dir: {checkpoint_dir}
 """
 
 
@@ -66,31 +66,37 @@ def _kwargs_block(kwargs: dict | None) -> str:
     return "\n".join(lines) + "\n"
 
 
-def emit_budget_configs(out_dir: Path = OUT_DIR) -> list[Path]:
+def emit_budget_configs(out_dir: Path = OUT_DIR, seeds=(0,)) -> list[Path]:
+    """Seed 0 goes to checkpoints/runs_accv_t2 (the original sweep); extra seeds to runs_accv_t6."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     written = []
-    for method, spec in METHODS.items():
-        for budget in BUDGETS:
-            run_name = f"{method}_n{budget}_seed0"
-            text = TEMPLATE.format(
-                method=method,
-                budget=budget,
-                run_name=run_name,
-                lr=spec["lr"],
-                kwargs_block=_kwargs_block(spec["kwargs"]),
-            )
-            p = out_dir / f"{run_name}.yaml"
-            p.write_text(text)
-            written.append(p)
+    for seed in seeds:
+        ckpt_dir = "checkpoints/runs_accv_t2" if seed == 0 else "checkpoints/runs_accv_t6"
+        for method, spec in METHODS.items():
+            for budget in BUDGETS:
+                run_name = f"{method}_n{budget}_seed{seed}"
+                text = TEMPLATE.format(
+                    method=method,
+                    budget=budget,
+                    run_name=run_name,
+                    seed=seed,
+                    lr=spec["lr"],
+                    kwargs_block=_kwargs_block(spec["kwargs"]),
+                    checkpoint_dir=ckpt_dir,
+                )
+                p = out_dir / f"{run_name}.yaml"
+                p.write_text(text)
+                written.append(p)
     return written
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out-dir", type=Path, default=OUT_DIR)
+    ap.add_argument("--seeds", type=int, nargs="+", default=[0])
     args = ap.parse_args(argv)
-    for p in emit_budget_configs(args.out_dir):
+    for p in emit_budget_configs(args.out_dir, tuple(args.seeds)):
         rel = p.relative_to(REPO_ROOT) if p.is_relative_to(REPO_ROOT) else p
         print(f"  wrote {rel}")
     return 0

@@ -34,9 +34,64 @@ below chance for PEFT methods.
    on `results/accv/raw_dmid`.
 2. DMID decision (kill date 16 September): keep it if zero-shot Dice is sane (about
    0.55 to 0.85) and the method ranking matches CBIS-DDSM; otherwise drop it.
-3. Co-author check of the result set, then writing from 19 September.
+3. Carlo: budget sweep seeds 1 and 2 (T6, section below).
+4. Co-author read of the draft (`paper/main_llncs_preview.pdf`), template transfer, supplementary tables.
 
-## If you need to run something yourself
+## Your compute task: budget sweep seeds 1 and 2 (T6)
+
+The adaptation-budget result (Sect. 6 of the draft) is single-seed. Eighteen short
+runs (three methods x three budgets x seeds 1 and 2, 15 to 35 minutes each) turn it
+into a three-seed figure. Configs are `configs/budget/*_seed{1,2}.yaml`; the image
+subsets are identical to seed 0, only the model initialisation and data order change.
+
+### Data you need in your own checkout
+
+Sounic's home is not group-readable, so download the public datasets on the head
+node into `~/medsam-vpt/data/` with this layout (see also `handoff.md` in the repo):
+
+```
+data/train_images/  data/train_masks/     ISIC 2018 Task 1 training (2594 pairs)
+data/val_images/    data/val_masks/       ISIC 2018 Task 1 validation (100 pairs)
+data/test_images/   data/test_masks/      ISIC 2018 Task 1 test (1000 pairs)
+data/ph2/trainx/    data/ph2/trainy/      PH2 (200 pairs, Kaggle redistribution)
+data/busi/benign/   data/busi/malignant/  BUSI (Kaggle "breast-ultrasound-images-dataset")
+data/cbis-ddsm/csv/ data/cbis-ddsm/jpeg/  CBIS-DDSM (Kaggle "cbis-ddsm-breast-cancer-image-dataset")
+```
+
+Sources: ISIC 2018 from https://challenge.isic-archive.com/data/ (Task 1 training,
+validation and test images plus ground truth); BUSI, PH2 and CBIS-DDSM via the
+Kaggle API (`pip install kaggle`, token in `~/.kaggle/kaggle.json`). Expected file
+counts after unpacking: 2595, 2595, 101, 101, 1001, 1001 in the six ISIC folders (one
+LICENSE.txt each), 400 in `ph2`, 1578 in `busi`, 10243 in `cbis-ddsm`. Also
+`checkpoints/medsam_vit_b.pth`: `python scripts/download_medsam.py`.
+
+Sanity check before submitting (CPU, about a minute):
+
+```bash
+python -c "from src.data.isic import ISIC2018; from src.data.busi import BUSI; from src.data.cbis_ddsm import CBISDDSM; print(len(ISIC2018('data','train')), len(BUSI('data/busi')), len(CBISDDSM('data/cbis-ddsm','test')), len(CBISDDSM('data/cbis-ddsm','train')))"
+```
+
+Expected: `2594 647 362 2458`.
+
+### Submit
+
+```bash
+cd ~/medsam-vpt && mkdir -p logs
+T6=$(sbatch --parsable cka/slurm/accv_t6.sbatch)
+sbatch --dependency=afterany:$T6 cka/slurm/accv_t6_eval.sbatch
+squeue -u $USER --array
+```
+
+About 7 GPU-hours of training (two at a time under the student QOS, so roughly 4
+hours of wall clock) plus about 2.5 hours of evaluation. Results to commit and push:
+
+```bash
+git add results/accv/runs_t6.csv results/accv/raw_t6 && git commit -m "results: budget sweep seeds 1-2" && git push
+```
+
+Checkpoints in `checkpoints/runs_accv_t6/` stay in your checkout (gitignored).
+
+## If you need to run something else
 
 Clone and environment on the head node:
 
