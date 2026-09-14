@@ -1,0 +1,14 @@
+\begin{tabular}{lcccc}
+\toprule
+Method & \multicolumn{2}{c}{BUSI (far-OOD)} & \multicolumn{2}{c}{CBIS-DDSM (far-OOD)} \\
+ & drift & IoU head & drift & IoU head \\
+\midrule
+Zero-shot & -- & -- & -- & 0.49 \\
+Decoder-only FT & -- & -- & -- & -- \\
+VPT-shallow & 0.93 & 0.69 & 0.70 & 0.49 \\
+VPT-deep & 0.92 & 0.55 & 0.66 & 0.52 \\
+LoRA & 0.95 & 0.72 & 0.82 & 0.46 \\
+Encoder-only LoRA & -- & -- & -- & -- \\
+Full FT & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}

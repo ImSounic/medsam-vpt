@@ -1,0 +1,117 @@
+% ACCV 2026 TrustFMI workshop paper. Draft scaffold; move into the official
+% ACCV 2026 LNCS template (ACCV_2026_template.zip) before submission and keep
+% splncs04 as the bibliography style. Double-blind: no names, no repo link.
+\documentclass[runningheads]{llncs}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{multirow}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xcolor}
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+
+\begin{document}
+
+\title{Protect the Decoder: Representation-Preserving Adaptation and Failure Detection for Far-OOD MedSAM}
+\titlerunning{Protect the Decoder}
+\author{Anonymous Submission}
+\authorrunning{Anonymous}
+\institute{Paper ID \todo{OpenReview ID}}
+
+\maketitle
+
+\begin{abstract}
+\todo{150 to 200 words. Far-OOD failure of adapted MedSAM is decoder representational drift; a CKA loss toward the base decoder reduces it; hook placement shows the decoder is the locus (encoder-only hooks hurt, decoder plus encoder hooks help most); the collapse scales non-monotonically with adaptation budget for LoRA; per-image decoder drift flags the remaining failures with AUROC up to 0.95 where the decoder's own IoU head is at chance.}
+\keywords{Foundation models \and Medical image segmentation \and Parameter-efficient fine-tuning \and Out-of-distribution robustness \and Failure detection}
+\end{abstract}
+
+% 1.0 page
+\section{Introduction}
+\todo{Far-OOD collapse of PEFT on MedSAM across the modality ladder (dermoscopy to ultrasound to mammography); decoder-drift hypothesis; three contributions.}
+
+Contributions:
+\begin{enumerate}
+  \item CKA-regularised LoRA with an OOD-only probe, three seeds, three prompt-jitter regimes, and a hook-placement ablation (decoder, encoder, both).
+  \item An adaptation-budget study for LoRA, decoder-only FT and encoder-only LoRA.
+  \item A per-image failure detector based on decoder drift, compared with the decoder's native IoU estimate.
+  \item \todo{DMID held-out set, if kept after 16 September.}
+\end{enumerate}
+
+% 0.5 page
+\section{Related Work}
+\todo{SAM and MedSAM adaptation~\cite{kirillov2023sam,ma2024medsam}; PEFT and feature distortion~\cite{hu2022lora,jia2022vpt,kumar2022finetuning,lee2023surgical,wortsman2022wiseft}; representation similarity~\cite{kornblith2019cka}; failure detection for segmentation. The prior comparison study is cited as third-party work~\cite{prior2026safer}; verify every reference before submission.}
+
+% 1.25 pages
+\section{Method}
+\subsection{CKA loss and probe}
+\todo{$L = L_{\text{task}} + \lambda\,\sum_\ell w_\ell\,(1 - \mathrm{CKA}(A^{\text{base}}_\ell, A^{\text{cur}}_\ell))$ on a fixed 32-image OOD-only probe (16 BUSI, 16 CBIS-DDSM), $\lambda = 10$, computed every 4 steps.}
+\subsection{Hook placement}
+\todo{Decoder hooks: upscaling output, IoU head, mask logits. Encoder hooks: neck output and the last two block outputs. Both: union.}
+\subsection{Budget protocol}
+\todo{Deterministic prefix subsets of 50, 250, 1000 ISIC images, fixed 6000 optimiser steps, cosine schedule over steps, best checkpoint by val Dice every 500 steps.}
+\subsection{Drift detector}
+\todo{$d = 1 - \mathrm{CKA}(U^{\text{base}}, U^{\text{cur}})$ on the $256 \times 256 \times 32$ upscaled mask embedding of one image, positions as samples; one extra base-model forward per image.}
+
+% 0.75 page
+\section{Experimental Setup}
+\todo{Datasets and drift ladder (ISIC 2018, PH2, BUSI, CBIS-DDSM; DMID stretch); methods; metrics (Dice, IoU, HD95, AUROC, AUPRC, ECE); prior results summarised in one paragraph.}
+
+% 2.0 pages
+\section{Results}
+\subsection{CKA regularisation}
+
+\begin{table}[t]
+  \centering
+  \caption{CKA-regularised LoRA versus LoRA, both trained with 20\,px box jitter, tight-box evaluation, mean $\pm$ std over three seeds. $p$: paired Wilcoxon over per-image Dice (pairs matched on seed and image) at 20\,px jitter, Holm-corrected over datasets.}
+  \label{tab:cka}
+  \input{tables/cka_multiseed}
+\end{table}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/robustness_six_curves.png}
+  \caption{Dice under box expansion for LoRA with and without CKA regularisation and three training regimes (tight, 20\,px, random up to 100\,px). Bands: $\pm$ one std over seeds where available.}
+  \label{fig:curves}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.6\linewidth]{figures/hook_ablation.png}
+  \caption{Hook placement (seed 0, 20\,px training): far-OOD Dice with no CKA, decoder hooks, encoder hooks, and both. \todo{replace with the three-seed version with error bars after T5.}}
+  \label{fig:hooks}
+\end{figure}
+
+\todo{Multi-seed gain (+0.05 BUSI, +0.10 CBIS-DDSM), shrinking at 50\,px and reversing on dermoscopy beyond 100\,px; rand100 plus CKA negative result; hook ablation: encoder-only hooks hurt, both help most (0.861 / 0.725 at seed 0, replication pending).}
+
+\subsection{Adaptation budget}
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/budget_curves.png}
+  \caption{In-domain and far-OOD Dice against the number of training images (log scale), zero-shot as reference. Single seed, 6000 optimiser steps per run.}
+  \label{fig:budget}
+\end{figure}
+\todo{LoRA first drops below zero-shot on far-OOD at 250 images and is non-monotonic; decoder-only and encoder-only LoRA never drop below zero-shot.}
+
+\subsection{Failure detection}
+\begin{table}[t]
+  \centering
+  \caption{AUROC for detecting per-image failures (Dice $<$ 0.5) on the far-OOD sets at 50\,px box jitter: decoder drift versus the decoder's IoU head. Cells with fewer than 20 failures are omitted; drift is zero by construction for zero-shot.}
+  \label{tab:detect}
+  \input{tables/detectors_pm50}
+\end{table}
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/failure_detection_pm50.png}
+  \caption{AUROC per method and detector on BUSI and CBIS-DDSM (50\,px jitter), and predicted IoU against true Dice for LoRA on CBIS-DDSM.}
+  \label{fig:detect}
+\end{figure}
+\todo{Drift detects PEFT failures (LoRA 0.91 / 0.76, VPT 0.93 / 0.62 at 50\,px; 0.95 / 0.82 at tight boxes); the IoU head is at or below chance for PEFT but informative for full FT and zero-shot; the two are complementary. Calibration (ECE) of the IoU head.}
+
+% 0.75 page
+\section{Limitations and Conclusion}
+\todo{Asymmetric ladder (single training domain); CKA cost (one extra probe forward every 4 steps, about 2x eval for drift); single seed for the budget study; DMID if included.}
+
+\bibliographystyle{splncs04}
+\bibliography{refs}
+
+\end{document}

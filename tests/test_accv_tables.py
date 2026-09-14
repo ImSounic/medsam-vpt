@@ -1,0 +1,75 @@
+"""LaTeX tables for the paper are generated from the result CSVs."""
+
+import pandas as pd
+
+from scripts.accv_tables import detector_table_tex, multiseed_table_tex
+
+
+def test_multiseed_table_has_rows_and_pvalues(tmp_path):
+    seed = tmp_path / "seed_table.csv"
+    pd.DataFrame(
+        [
+            {
+                "dataset": "busi",
+                "cka_n": 3,
+                "no_cka_n": 3,
+                "cka_dice_mean": 0.8258,
+                "cka_dice_std": 0.0075,
+                "no_cka_dice_mean": 0.7751,
+                "no_cka_dice_std": 0.0320,
+                "delta_dice": 0.0513,
+                "cka_hd95_mean": 41.0,
+                "no_cka_hd95_mean": 137.0,
+            },
+        ]
+    ).to_csv(seed, index=False)
+    wil = tmp_path / "paired_wilcoxon.csv"
+    pd.DataFrame(
+        [
+            {
+                "dataset": "busi",
+                "level": 20,
+                "n_pairs": 1941,
+                "p_holm": 3e-7,
+                "median_delta": 0.0115,
+            }
+        ]
+    ).to_csv(wil, index=False)
+    tex = multiseed_table_tex(seed, wil, level=20)
+    assert r"\begin{tabular}" in tex
+    assert "BUSI" in tex and "0.826" in tex and "0.775" in tex and "+0.051" in tex
+    assert "$<$0.001" in tex
+
+
+def test_detector_table_marks_low_failure_counts(tmp_path):
+    m = tmp_path / "detector_metrics.csv"
+    rows = []
+    for run, ds, det, auroc, nfail in [
+        ("lora_seed0", "busi", "drift", 0.912, 120),
+        ("lora_seed0", "busi", "iou_pred", 0.692, 120),
+        ("lora_seed0", "cbis_ddsm", "drift", 0.757, 270),
+        ("lora_seed0", "cbis_ddsm", "iou_pred", 0.444, 270),
+        ("full_ft_seed0", "busi", "drift", 0.227, 3),
+        ("full_ft_seed0", "busi", "iou_pred", 0.868, 3),
+    ]:
+        rows.append(
+            {
+                "run_name": run,
+                "dataset": ds,
+                "detector": det,
+                "threshold": 0.5,
+                "auroc": auroc,
+                "auprc": 0.5,
+                "n": 647,
+                "n_fail": nfail,
+            }
+        )
+    pd.DataFrame(rows).to_csv(m, index=False)
+    tex = detector_table_tex(m, threshold=0.5, min_fail=20)
+    assert "LoRA" in tex and "0.91" in tex and "0.44" in tex
+    assert "Full FT" in tex and "0.23" not in tex.split("Full FT")[1].split("\\\\")[
+        0
+    ].replace(
+        "--", ""
+    )  # low-count cells blanked
+    assert "--" in tex
