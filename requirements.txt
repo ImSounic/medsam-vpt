@@ -10,3 +10,5 @@ requests
 scipy
 git+https://github.com/facebookresearch/segment-anything.git
 tqdm
+tifffile
+imagecodecs

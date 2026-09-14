@@ -1,0 +1,26 @@
+# DMID held-out mammography set (ACCV TrustFMI spec section 7): evaluation only,
+# tight boxes. Run with --checkpoint for adapted models; no checkpoint = zero-shot.
+name: zero_shot
+method: zero_shot
+
+model:
+  arch: vit_b
+  checkpoint: checkpoints/medsam_vit_b.pth
+  image_size: 1024
+
+data:
+  root: data
+  test_sets:
+    - name: dmid
+      kind: dmid
+      root: data/dmid
+
+eval:
+  batch_size: 2
+  num_workers: 4
+  bbox_perturb_pixels: 0
+  device: cuda
+
+output:
+  results_csv: results/accv/runs_dmid.csv
+  per_image_csv: results/accv/raw_dmid/per_image.csv

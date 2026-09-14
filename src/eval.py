@@ -16,6 +16,7 @@ from tqdm import tqdm
 
 from src.data.busi import BUSI
 from src.data.cbis_ddsm import CBISDDSM
+from src.data.dmid import DMID
 from src.data.isic import ISIC2018, isic_collate
 from src.data.ph2 import PH2
 from src.device_utils import (
@@ -104,6 +105,10 @@ def build_dataset(cfg: dict, ts_cfg: dict, image_size: int):
             bbox_perturb_pixels=perturb,
             abnormality_type=ts_cfg.get("abnormality_type", "all"),
         )
+    if kind == "dmid":
+        root_cfg = ts_cfg.get("root", "data/dmid")
+        root = Path(root_cfg) if Path(root_cfg).is_absolute() else REPO_ROOT / root_cfg
+        return DMID(root=root, image_size=image_size, bbox_perturb_pixels=perturb)
     raise ValueError(f"Unknown dataset kind: {kind}")
 
 

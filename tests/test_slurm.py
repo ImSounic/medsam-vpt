@@ -62,6 +62,7 @@ def test_t3_array_covers_two_prompt_levels():
         "accv_t4_eval.sbatch",
         "accv_t5.sbatch",
         "accv_t5_eval.sbatch",
+        "accv_dmid.sbatch",
         "submit_accv.sh",
         "sync_to_hpc.sh",
     ],
