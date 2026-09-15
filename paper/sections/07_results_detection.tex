@@ -8,15 +8,8 @@
   \input{tables/detectors_pm50}
 \end{table}
 
-\begin{figure}[tbp]
-  \centering
-  \includegraphics[width=0.34\linewidth]{figures/failure_detection_pm0_scatter.png}
-  \caption{IoU estimate against true Dice for LoRA on CBIS-DDSM at tight boxes: the estimate stays near 0.5 whether the mask is right or wrong.}
-  \label{fig:detect}
-\end{figure}
-
 \paragraph{Drift detects the failures of parameter-efficient adapters.}
-At tight boxes LoRA's 61 failures among 647 BUSI images and 152 among 362 CBIS-DDSM images are detected with AUROC 0.95 and 0.82 (AUPRC 0.75 and 0.83 against failure rates of 0.09 and 0.42), VPT-shallow's with 0.93 and 0.70, VPT-deep's with 0.92 and 0.67. Under 50\,px jitter (Table~\ref{tab:detect}) the ordering is unchanged, with drift at 0.91 to 0.93 on BUSI and 0.61 to 0.76 on CBIS-DDSM. Their IoU estimate is at or below chance (0.44 to 0.69), and the scatter in Fig.~\ref{fig:detect} shows why: after adaptation it collapses to a narrow band around 0.5 regardless of mask quality. Its calibration error on CBIS-DDSM at 50\,px is 0.31 for LoRA, which predicts an IoU of 0.50 on average against a true 0.20.
+At tight boxes LoRA's 61 failures among 647 BUSI images and 152 among 362 CBIS-DDSM images are detected with AUROC 0.95 and 0.82 (AUPRC 0.75 and 0.83), VPT-shallow's with 0.93 and 0.70, VPT-deep's with 0.92 and 0.67. Under 50\,px jitter (Table~\ref{tab:detect}) the ordering is unchanged, with drift at 0.91 to 0.93 on BUSI and 0.61 to 0.76 on CBIS-DDSM. Their IoU estimate is at or below chance (0.44 to 0.69) because after adaptation it collapses to a narrow band between 0.4 and 0.6 regardless of mask quality (scatter in the supplement). Its calibration error on CBIS-DDSM at 50\,px is 0.31 for LoRA, which predicts an IoU of 0.50 on average against a true 0.20.
 
 \paragraph{The IoU estimate detects the failures of full fine-tuning.}
 The pattern inverts for the methods that keep their far-OOD accuracy. Full fine-tuning and encoder-only LoRA fail on only 2 to 14 images at tight boxes, too few to score, but under 50\,px jitter their 220 to 236 CBIS-DDSM failures are detected by the IoU estimate with AUROC 0.75 to 0.79 (0.87 to 0.89 on BUSI) while drift is below chance (0.23 to 0.36); zero-shot MedSAM is likewise served by its IoU head (0.87, 0.71). The two signals therefore cover different mechanisms: drift flags predictions on which the adapted decoder has left the representation region the base model would use, which is how parameter-efficient adapters fail, and it is uninformative once the decoder is retrained wholesale and moves for every image, exactly the case in which the IoU head stays usable. For a deployed adapter the rule is simple: few adapted decoder parameters, monitor drift; a fully retrained decoder, monitor its own IoU estimate.
