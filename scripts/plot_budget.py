@@ -139,14 +139,17 @@ def make_drift_figure(drift: pd.DataFrame, out: Path) -> None:
     plt.close(fig)
 
 
-def make_figure(summary: pd.DataFrame, out: Path) -> None:
+def make_figure(
+    summary: pd.DataFrame, out: Path, drift: pd.DataFrame | None = None
+) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     zs = summary.attrs.get("zero_shot", {})
-    fig, axes = plt.subplots(1, 2, figsize=(8.5, 3.6))
+    n_panels = 3 if drift is not None else 2
+    fig, axes = plt.subplots(1, n_panels, figsize=(4.2 * n_panels, 3.4))
     panels = [
         ("id_dice", "In-domain (ISIC test)"),
         ("far_ood_dice", "Far-OOD (mean BUSI, CBIS-DDSM)"),
@@ -162,6 +165,26 @@ def make_figure(summary: pd.DataFrame, out: Path) -> None:
         ax.set_ylabel("Dice")
         ax.set_title(title)
         ax.legend(fontsize=7)
+    if drift is not None:
+        ax = axes[2]
+        for method, g in drift.groupby("method"):
+            g = g.sort_values("budget")
+            (line,) = ax.plot(
+                g.budget, g.far_ood_drift, marker="o", label=f"{method} (decoder)"
+            )
+            ax.plot(
+                g.budget,
+                g.far_ood_drift_enc,
+                marker="s",
+                ls="--",
+                color=line.get_color(),
+                label=f"{method} (encoder)",
+            )
+        ax.set_xscale("log")
+        ax.set_xlabel("training images")
+        ax.set_ylabel("1 - CKA to base (far-OOD)")
+        ax.set_title("Representation drift")
+        ax.legend(fontsize=6)
     fig.tight_layout()
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=200)
@@ -192,17 +215,15 @@ def main(argv: list[str] | None = None) -> int:
     print(summary.sort_values(["method", "budget"]).round(4).to_string(index=False))
     for method, b in first_drop.items():
         print(f"[budget] {method}: first budget below zero-shot far-OOD = {b}")
-    make_figure(summary, args.out)
-    print(f"[budget] figure -> {args.out}")
+    drift = None
     if args.drift_raw_dir is not None:
         drift = drift_summary(args.drift_raw_dir)
-        drift_out = args.out.with_name(args.out.stem + "_drift.png")
         drift.sort_values(["method", "budget"]).to_csv(
-            drift_out.with_suffix(".csv"), index=False
+            args.out.with_name(args.out.stem + "_drift.csv"), index=False
         )
         print(drift.sort_values(["method", "budget"]).round(4).to_string(index=False))
-        make_drift_figure(drift, drift_out)
-        print(f"[budget] drift figure -> {drift_out}")
+    make_figure(summary, args.out, drift=drift)
+    print(f"[budget] figure -> {args.out}")
     return 0
 
 

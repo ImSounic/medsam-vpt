@@ -78,7 +78,7 @@ CURVES = {
     ),
     "CKA pm0": (
         r"^lora_cka_oodonly_late_l10_seed(\d)$",
-        ["cka/results/runs_cka_oodonly_late.csv"],
+        ["results/accv/runs_cka_pm0_retrained.csv"],  # same model as the sweep
         ["bbox_robustness/results_cka_oodonly_late_l10_pm0"],
     ),
     "CKA pm20": (

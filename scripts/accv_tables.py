@@ -109,6 +109,52 @@ def detector_table_tex(
     return "\n".join(lines) + "\n"
 
 
+CKA_LABEL = [
+    (
+        r"^lora_cka_oodonly_late_l10_seed\d+$",
+        "LoRA + CKA (decoder hooks, tight training)",
+    ),
+    (r"^lora_cka_oodonly_late_l10_pm20_seed\d+$", "LoRA + CKA (decoder hooks, 20 px)"),
+    (r"^lora_cka_oodonly_enc_l10_pm20_seed\d+$", "LoRA + CKA (encoder hooks, 20 px)"),
+    (r"^lora_cka_oodonly_both_l10_pm20_seed\d+$", "LoRA + CKA (both, 20 px)"),
+]
+
+
+def dmid_table_tex(runs_csv: Path) -> str:
+    """DMID held-out set: Dice and HD95 per method (seed 0) and per CKA variant (mean over available seeds)."""
+    import re
+
+    df = pd.read_csv(runs_csv)
+    df = df[df.dataset == "dmid"]
+    rows = []
+    for run in METHOD_ORDER:
+        sub = df[df.run_name == run]
+        if len(sub):
+            rows.append(
+                (
+                    METHOD_LABEL[run],
+                    sub.dice_mean.mean(),
+                    sub.hd95_mean.mean(),
+                    len(sub),
+                )
+            )
+    for pattern, label in CKA_LABEL:
+        sub = df[df.run_name.str.match(pattern)]
+        if len(sub):
+            rows.append((label, sub.dice_mean.mean(), sub.hd95_mean.mean(), len(sub)))
+    lines = [
+        r"\begin{tabular}{lcc}",
+        r"\toprule",
+        r"Method & Dice & HD95 (px) \\",
+        r"\midrule",
+    ]
+    for label, dice, hd, n in rows:
+        seeds = f" ($n={n}$)" if n > 1 else ""
+        lines.append(f"{label}{seeds} & {dice:.3f} & {hd:.0f} \\\\")
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    return "\n".join(lines) + "\n"
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out-dir", type=Path, default=REPO_ROOT / "paper/tables")
@@ -136,6 +182,9 @@ def main(argv: list[str] | None = None) -> int:
     (args.out_dir / "detectors_pm50.tex").write_text(
         detector_table_tex(args.detector_csv, with_auprc=True)
     )
+    dmid_csv = REPO_ROOT / "results/accv/runs_dmid.csv"
+    if dmid_csv.exists():
+        (args.out_dir / "dmid.tex").write_text(dmid_table_tex(dmid_csv))
     if args.detector_csv_tight.exists():
         (args.out_dir / "detectors_pm0.tex").write_text(
             detector_table_tex(args.detector_csv_tight)

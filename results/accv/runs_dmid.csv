@@ -1,0 +1,13 @@
+run_name,method,dataset,seed,dice_mean,dice_std,iou_mean,hd95_mean,trainable_params,peak_mem_mb,wall_clock_s,timestamp,notes
+zero_shot,zero_shot,dmid,0,0.6369,0.2579,0.5143,30.0750,0,5663,136.3,2026-09-14T23:03:38,drift;pm0
+decoder_only_seed0,decoder_only,dmid,0,0.7265,0.2605,0.6246,32.3973,4058340,5679,90.9,2026-09-14T23:05:27,drift;pm0
+vpt_shallow_seed0,vpt_shallow,dmid,0,0.5715,0.2734,0.4486,217.1654,4066020,5719,98.2,2026-09-14T23:07:14,drift;pm0
+vpt_deep_seed0,vpt_deep,dmid,0,0.5260,0.2989,0.4115,253.0440,4150500,5719,99.4,2026-09-14T23:09:02,drift;pm0
+lora_seed0,lora,dmid,0,0.4016,0.3100,0.3054,319.0250,4353252,5721,104.3,2026-09-14T23:10:55,drift;pm0
+lora_encoder_only_r28_all_seed0,lora_encoder_only,dmid,0,0.7327,0.2522,0.6295,25.2503,4128768,5735,100.3,2026-09-14T23:12:44,drift;pm0
+full_ft_seed0,full_ft,dmid,0,0.7273,0.2578,0.6251,25.4307,93729252,6061,99.8,2026-09-14T23:14:35,drift;pm0
+lora_cka_oodonly_late_l10_seed0,lora,dmid,0,0.6973,0.2651,0.5891,65.4470,4353252,5721,100.8,2026-09-14T23:16:24,drift;pm0
+lora_cka_oodonly_late_l10_pm20_seed1,lora,dmid,1,0.6168,0.2880,0.5028,114.0200,4353252,5721,101.2,2026-09-14T23:18:16,drift;pm0
+lora_cka_oodonly_late_l10_pm20_seed2,lora,dmid,2,0.4956,0.3221,0.3905,126.5286,4353252,5721,101.7,2026-09-14T23:20:23,drift;pm0
+lora_cka_oodonly_enc_l10_pm20_seed0,lora,dmid,0,0.3660,0.3170,0.2760,329.8361,4353252,5721,97.6,2026-09-14T23:22:14,drift;pm0
+lora_cka_oodonly_both_l10_pm20_seed0,lora,dmid,0,0.6513,0.2751,0.5379,94.3638,4353252,5721,101.2,2026-09-14T23:24:05,drift;pm0

@@ -123,3 +123,27 @@ def test_detector_table_can_show_auprc(tmp_path):
     ).to_csv(m, index=False)
     tex = detector_table_tex(m, threshold=0.5, with_auprc=True)
     assert "0.91 / 0.75" in tex and "0.44 / 0.41" in tex
+
+
+def test_dmid_table_lists_methods_in_order(tmp_path):
+    from scripts.accv_tables import dmid_table_tex
+
+    m = tmp_path / "runs_dmid.csv"
+    rows = [
+        ("zero_shot", "dmid", 0.6369, 0.2579, 30.1),
+        ("lora_seed0", "dmid", 0.4016, 0.31, 319.0),
+        ("full_ft_seed0", "dmid", 0.7273, 0.2578, 25.4),
+        ("lora_cka_oodonly_late_l10_seed0", "dmid", 0.6973, 0.2651, 65.4),
+        ("lora_cka_oodonly_both_l10_pm20_seed0", "dmid", 0.6513, 0.2751, 94.4),
+    ]
+    pd.DataFrame(
+        rows, columns=["run_name", "dataset", "dice_mean", "dice_std", "hd95_mean"]
+    ).to_csv(m, index=False)
+    tex = dmid_table_tex(m)
+    assert (
+        tex.index("Zero-shot")
+        < tex.index("LoRA")
+        < tex.index("Full FT")
+        < tex.index("CKA")
+    )
+    assert "0.402" in tex and "0.637" in tex and "319" in tex

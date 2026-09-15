@@ -1,0 +1,17 @@
+\begin{tabular}{lcc}
+\toprule
+Method & Dice & HD95 (px) \\
+\midrule
+Zero-shot & 0.637 & 30 \\
+Decoder-only FT & 0.727 & 32 \\
+VPT-shallow & 0.572 & 217 \\
+VPT-deep & 0.526 & 253 \\
+LoRA & 0.402 & 319 \\
+Encoder-only LoRA & 0.733 & 25 \\
+Full FT & 0.727 & 25 \\
+LoRA + CKA (decoder hooks, tight training) & 0.697 & 65 \\
+LoRA + CKA (decoder hooks, 20 px) ($n=2$) & 0.556 & 120 \\
+LoRA + CKA (encoder hooks, 20 px) & 0.366 & 330 \\
+LoRA + CKA (both, 20 px) & 0.651 & 94 \\
+\bottomrule
+\end{tabular}

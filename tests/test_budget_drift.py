@@ -36,3 +36,38 @@ def test_drift_summary_means_far_ood(tmp_path):
     assert abs(lora.id_drift - 0.05) < 1e-9
     dec = df[(df.method == "decoder_only") & (df.budget == 250)].iloc[0]
     assert abs(dec.far_ood_drift - 0.30) < 1e-9
+
+
+def test_budget_figure_with_drift_panel(tmp_path):
+    from scripts.plot_budget import make_figure
+
+    summary = pd.DataFrame(
+        [
+            {"method": "lora", "budget": 50, "id_dice": 0.94, "far_ood_dice": 0.82},
+            {"method": "lora", "budget": 250, "id_dice": 0.95, "far_ood_dice": 0.63},
+        ]
+    )
+    summary.attrs["zero_shot"] = {"id_dice": 0.907, "far_ood_dice": 0.758}
+    drift = pd.DataFrame(
+        [
+            {
+                "method": "lora",
+                "budget": 50,
+                "far_ood_drift": 0.12,
+                "far_ood_drift_enc": 0.02,
+                "id_drift": 0.1,
+                "id_drift_enc": 0.3,
+            },
+            {
+                "method": "lora",
+                "budget": 250,
+                "far_ood_drift": 0.36,
+                "far_ood_drift_enc": 0.11,
+                "id_drift": 0.1,
+                "id_drift_enc": 0.4,
+            },
+        ]
+    )
+    out = tmp_path / "b.png"
+    make_figure(summary, out, drift=drift)
+    assert out.exists()
