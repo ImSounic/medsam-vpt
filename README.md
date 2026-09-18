@@ -1,6 +1,7 @@
 <div align="center">
 <h1>[MICCAI 2026] Official repository for the paper "When Adaptation Hurts: Connecting Representational Drift to OOD Failures in MedSAM Fine-Tuning."</h1>
-
+https://arxiv.org/abs/2608.21300
+    
 **Sounic Akkaraju**<sup>1*</sup> · **Marko Haralović**<sup>1,2*</sup> · **Carlo Baretta**<sup>1</sup> · **Vasil Zapryanov**<sup>1</sup> · **Alexia Briassouli**<sup>1</sup>
 
 <sup>1</sup>University of Twente, Enschede, The Netherlands&emsp;&emsp;<sup>2</sup>University of Zagreb, Zagreb, Croatia<br>
