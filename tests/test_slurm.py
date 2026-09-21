@@ -67,6 +67,7 @@ def test_t3_array_covers_two_prompt_levels():
         "accv_t6.sbatch",
         "accv_t6_eval.sbatch",
         "accv_t7.sbatch",
+        "accv_t8.sbatch",
         "submit_accv.sh",
         "sync_to_hpc.sh",
     ],
@@ -106,3 +107,12 @@ def test_t7_covers_budget_and_full_data_checkpoints():
         and sum("runs_accv_t2" in c for c in ck) == 9
         and "--drift" in text
     )
+
+
+def test_t8_covers_seed_checkpoints_ladder_and_dmid():
+    text = (SLURM / "accv_t8.sbatch").read_text()
+    ck = _bash_array(text, "CHECKPOINTS")
+    assert len(ck) == 6 and all("seed${SEED}" in c for c in ck)
+    assert "SEEDS=(1 2)" in text and "--array=0-1" in text
+    assert "--drift" in text and "runs_t8_pm${PM}.csv" in text
+    assert "accv_dmid_eval.yaml" in text and "raw_t8_dmid" in text
