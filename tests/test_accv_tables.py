@@ -2,7 +2,12 @@
 
 import pandas as pd
 
-from scripts.accv_tables import detector_table_tex, multiseed_table_tex
+from scripts.accv_tables import (
+    detector_table_tex,
+    multiseed_table_tex,
+    risk_coverage_table_tex,
+    threshold_sweep_table_tex,
+)
 
 
 def test_multiseed_table_has_rows_and_pvalues(tmp_path):
@@ -147,3 +152,73 @@ def test_dmid_table_lists_methods_in_order(tmp_path):
         < tex.index("CKA")
     )
     assert "0.402" in tex and "0.637" in tex and "319" in tex
+
+
+def _metrics_rows(run, ds, det, thresholds, auroc):
+    return [
+        {
+            "run_name": run,
+            "dataset": ds,
+            "detector": det,
+            "threshold": t,
+            "auroc": auroc,
+            "auprc": auroc - 0.1,
+            "n": 100,
+            "n_fail": 30,
+        }
+        for t in thresholds
+    ]
+
+
+def test_detector_table_merges_dmid_csv(tmp_path):
+    ladder = tmp_path / "ladder.csv"
+    dmid = tmp_path / "dmid.csv"
+    pd.DataFrame(
+        _metrics_rows("lora_seed0", "busi", "drift", [0.5], 0.95)
+        + _metrics_rows("lora_seed0", "busi", "iou_pred", [0.5], 0.72)
+    ).to_csv(ladder, index=False)
+    pd.DataFrame(
+        _metrics_rows("lora_seed0", "dmid", "drift", [0.5], 0.76)
+        + _metrics_rows("lora_seed0", "dmid", "iou_pred", [0.5], 0.60)
+    ).to_csv(dmid, index=False)
+    tex = detector_table_tex([ladder, dmid], datasets=["busi", "dmid"], with_auprc=True)
+    assert "DMID (held-out)" in tex
+    assert "0.95 / 0.85" in tex and "0.76 / 0.66" in tex
+
+
+def test_threshold_sweep_table_one_column_per_threshold(tmp_path):
+    m = tmp_path / "m.csv"
+    pd.DataFrame(
+        _metrics_rows("lora_seed0", "busi", "drift", [0.3, 0.5, 0.7], 0.9)
+        + _metrics_rows("lora_seed0", "busi", "iou_pred", [0.3, 0.5, 0.7], 0.5)
+    ).to_csv(m, index=False)
+    tex = threshold_sweep_table_tex(m, runs=("lora_seed0",), datasets=("busi",))
+    assert "0.3 & 0.5 & 0.7" in tex
+    assert tex.count("0.90") == 3 and "0.50" not in tex
+
+
+def test_risk_coverage_table_recall_and_residual(tmp_path):
+    pts = tmp_path / "points.csv"
+    pd.DataFrame(
+        [
+            {
+                "run_name": "lora_seed0",
+                "dataset": "busi",
+                "detector": "drift",
+                "threshold": 0.5,
+                "n": 647,
+                "n_fail": 61,
+                "base_rate": 0.094,
+                "aurc": 0.010,
+                "flagged": c,
+                "k": int(c * 647),
+                "recall": r,
+                "precision": 0.5,
+                "residual_risk": rr,
+            }
+            for c, r, rr in [(0.1, 0.705, 0.031), (0.2, 0.869, 0.015)]
+        ]
+    ).to_csv(pts, index=False)
+    tex = risk_coverage_table_tex(pts, runs=("lora_seed0",), datasets=("busi",))
+    assert r"top 10\%" in tex and r"top 20\%" in tex
+    assert "0.87 / 0.015" in tex and "0.094 & 0.010" in tex

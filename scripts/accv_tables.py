@@ -17,6 +17,7 @@ DATASET_LABEL = {
     "ph2": "PH2 (near-OOD)",
     "busi": "BUSI (far-OOD)",
     "cbis_ddsm": "CBIS-DDSM (far-OOD)",
+    "dmid": "DMID (held-out)",
 }
 DATASET_ORDER = ["isic2018_test", "ph2", "busi", "cbis_ddsm"]
 METHOD_LABEL = {
@@ -65,14 +66,21 @@ def multiseed_table_tex(
     return "\n".join(lines) + "\n"
 
 
+def _read_metrics(csvs) -> pd.DataFrame:
+    """Concatenate detector_metrics.csv files (e.g. the ladder run and the DMID run)."""
+    paths = [csvs] if isinstance(csvs, (str, Path)) else list(csvs)
+    return pd.concat([pd.read_csv(p) for p in paths], ignore_index=True)
+
+
 def detector_table_tex(
-    metrics_csv: Path,
+    metrics_csv,
     threshold: float = 0.5,
     datasets=("busi", "cbis_ddsm"),
     min_fail: int = 20,
     with_auprc: bool = False,
 ) -> str:
-    m = pd.read_csv(metrics_csv)
+    """metrics_csv: one detector_metrics.csv or a list of them (merged)."""
+    m = _read_metrics(metrics_csv)
     m = m[m.threshold == threshold]
     cols = " & ".join(
         f"\\multicolumn{{2}}{{c}}{{{DATASET_LABEL.get(d, d)}}}" for d in datasets
@@ -105,6 +113,78 @@ def detector_table_tex(
                 else:
                     cells.append(f"{float(cell.auroc.iloc[0]):.2f}")
         lines.append(f"{METHOD_LABEL.get(run, run)} & " + " & ".join(cells) + r" \\")
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    return "\n".join(lines) + "\n"
+
+
+def threshold_sweep_table_tex(
+    metrics_csv,
+    runs=("lora_seed0", "vpt_shallow_seed0", "vpt_deep_seed0"),
+    datasets=("busi", "cbis_ddsm"),
+    detector: str = "drift",
+) -> str:
+    """Supplement: AUROC of one detector per (method, dataset) at every failure threshold."""
+    m = _read_metrics(metrics_csv)
+    m = m[(m.detector == detector) & m.run_name.isin(runs) & m.dataset.isin(datasets)]
+    thresholds = sorted(m.threshold.unique())
+    lines = [
+        r"\begin{tabular}{ll" + "c" * len(thresholds) + "}",
+        r"\toprule",
+        "Method & Dataset & " + " & ".join(f"{t:.1f}" for t in thresholds) + r" \\",
+        r"\midrule",
+    ]
+    for run in [r for r in METHOD_ORDER if r in runs]:
+        for ds in datasets:
+            cells = []
+            for t in thresholds:
+                cell = m[(m.run_name == run) & (m.dataset == ds) & (m.threshold == t)]
+                cells.append(f"{float(cell.auroc.iloc[0]):.2f}" if len(cell) else "--")
+            lines.append(
+                f"{METHOD_LABEL.get(run, run)} & {DATASET_LABEL.get(ds, ds)} & "
+                + " & ".join(cells)
+                + r" \\"
+            )
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    return "\n".join(lines) + "\n"
+
+
+def risk_coverage_table_tex(
+    points_csv: Path,
+    runs=("lora_seed0", "vpt_shallow_seed0", "vpt_deep_seed0"),
+    datasets=("busi", "cbis_ddsm"),
+    detector: str = "drift",
+) -> str:
+    """Supplement: base failure rate, AURC, and recall / residual failure rate when the top c images by drift are flagged."""
+    p = pd.read_csv(points_csv)
+    p = p[(p.detector == detector) & p.run_name.isin(runs) & p.dataset.isin(datasets)]
+    coverages = sorted(p.flagged.unique())
+    lines = [
+        r"\begin{tabular}{llcc" + "c" * len(coverages) + "}",
+        r"\toprule",
+        "Method & Dataset & Base rate & AURC & "
+        + " & ".join(f"top {c:.0%}".replace("%", r"\%") for c in coverages)
+        + r" \\",
+        r"\midrule",
+    ]
+    for run in [r for r in METHOD_ORDER if r in runs]:
+        for ds in datasets:
+            g = p[(p.run_name == run) & (p.dataset == ds)]
+            if not len(g):
+                continue
+            cells = []
+            for c in coverages:
+                row = g[g.flagged == c]
+                cells.append(
+                    f"{float(row.recall.iloc[0]):.2f} / {float(row.residual_risk.iloc[0]):.3f}"
+                    if len(row)
+                    else "--"
+                )
+            lines.append(
+                f"{METHOD_LABEL.get(run, run)} & {DATASET_LABEL.get(ds, ds)} & "
+                f"{float(g.base_rate.iloc[0]):.3f} & {float(g.aurc.iloc[0]):.3f} & "
+                + " & ".join(cells)
+                + r" \\"
+            )
     lines += [r"\bottomrule", r"\end{tabular}"]
     return "\n".join(lines) + "\n"
 
@@ -171,6 +251,28 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=REPO_ROOT / "results/accv/failure_detection_pm0/detector_metrics.csv",
     )
+    ap.add_argument(
+        "--detector-csv-dmid",
+        type=Path,
+        default=REPO_ROOT / "results/accv/failure_detection_dmid/detector_metrics.csv",
+    )
+    ap.add_argument(
+        "--sweep-csv",
+        type=Path,
+        default=REPO_ROOT
+        / "results/accv/failure_detection_pm0_sweep/detector_metrics.csv",
+    )
+    ap.add_argument(
+        "--sweep-csv-pm50",
+        type=Path,
+        default=REPO_ROOT
+        / "results/accv/failure_detection_pm50_sweep/detector_metrics.csv",
+    )
+    ap.add_argument(
+        "--risk-coverage-csv",
+        type=Path,
+        default=REPO_ROOT / "results/accv/risk_coverage_pm0/review_points.csv",
+    )
     args = ap.parse_args(argv)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     (args.out_dir / "cka_multiseed.tex").write_text(
@@ -186,8 +288,26 @@ def main(argv: list[str] | None = None) -> int:
     if dmid_csv.exists():
         (args.out_dir / "dmid.tex").write_text(dmid_table_tex(dmid_csv))
     if args.detector_csv_tight.exists():
+        # Main-text table: tight boxes, AUROC / AUPRC, with the held-out DMID column.
+        csvs = [args.detector_csv_tight]
+        datasets = ["busi", "cbis_ddsm"]
+        if args.detector_csv_dmid.exists():
+            csvs.append(args.detector_csv_dmid)
+            datasets.append("dmid")
         (args.out_dir / "detectors_pm0.tex").write_text(
-            detector_table_tex(args.detector_csv_tight)
+            detector_table_tex(csvs, datasets=datasets, with_auprc=True)
+        )
+    if args.sweep_csv.exists():
+        (args.out_dir / "supp_threshold_sweep_pm0.tex").write_text(
+            threshold_sweep_table_tex(args.sweep_csv)
+        )
+    if args.sweep_csv_pm50.exists():
+        (args.out_dir / "supp_threshold_sweep_pm50.tex").write_text(
+            threshold_sweep_table_tex(args.sweep_csv_pm50)
+        )
+    if args.risk_coverage_csv.exists():
+        (args.out_dir / "supp_risk_coverage_pm0.tex").write_text(
+            risk_coverage_table_tex(args.risk_coverage_csv)
         )
     for p in sorted(args.out_dir.glob("*.tex")):
         print(f"[tables] wrote {p}")

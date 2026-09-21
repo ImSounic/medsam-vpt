@@ -1,14 +1,14 @@
-\begin{tabular}{lcccc}
+\begin{tabular}{lcccccc}
 \toprule
-Method & \multicolumn{2}{c}{BUSI (far-OOD)} & \multicolumn{2}{c}{CBIS-DDSM (far-OOD)} \\
- & drift & IoU head & drift & IoU head \\
+Method & \multicolumn{2}{c}{BUSI (far-OOD)} & \multicolumn{2}{c}{CBIS-DDSM (far-OOD)} & \multicolumn{2}{c}{DMID (held-out)} \\
+ & drift & IoU head & drift & IoU head & drift & IoU head \\
 \midrule
-Zero-shot & -- & -- & -- & 0.49 \\
-Decoder-only FT & -- & -- & -- & -- \\
-VPT-shallow & 0.93 & 0.69 & 0.70 & 0.49 \\
-VPT-deep & 0.92 & 0.55 & 0.66 & 0.52 \\
-LoRA & 0.95 & 0.72 & 0.82 & 0.46 \\
-Encoder-only LoRA & -- & -- & -- & -- \\
-Full FT & -- & -- & -- & -- \\
+Zero-shot & -- & -- & -- & 0.49 / 0.12 & -- & 0.47 / 0.27 \\
+Decoder-only FT & -- & -- & -- & -- & 0.43 / 0.20 & 0.63 / 0.35 \\
+VPT-shallow & 0.93 / 0.58 & 0.69 / 0.17 & 0.70 / 0.51 & 0.49 / 0.26 & 0.47 / 0.42 & 0.60 / 0.44 \\
+VPT-deep & 0.92 / 0.49 & 0.55 / 0.09 & 0.66 / 0.57 & 0.52 / 0.32 & 0.45 / 0.45 & 0.53 / 0.42 \\
+LoRA & 0.95 / 0.75 & 0.72 / 0.19 & 0.82 / 0.83 & 0.46 / 0.41 & 0.76 / 0.87 & 0.60 / 0.72 \\
+Encoder-only LoRA & -- & -- & -- & -- & 0.69 / 0.32 & 0.24 / 0.14 \\
+Full FT & -- & -- & -- & -- & 0.59 / 0.23 & 0.28 / 0.13 \\
 \bottomrule
 \end{tabular}
