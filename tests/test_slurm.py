@@ -30,6 +30,7 @@ def _bash_array(text: str, name: str) -> list[str]:
         ("accv_t4.sbatch", "CONFIGS", 2),
         ("accv_t5.sbatch", "CONFIGS", 4),
         ("accv_t6.sbatch", "CONFIGS", 18),
+        ("accv_t9.sbatch", "CONFIGS", 10),
     ],
 )
 def test_train_arrays_match_configs(script, var, n):
@@ -68,6 +69,7 @@ def test_t3_array_covers_two_prompt_levels():
         "accv_t6_eval.sbatch",
         "accv_t7.sbatch",
         "accv_t8.sbatch",
+        "accv_t9.sbatch",
         "submit_accv.sh",
         "sync_to_hpc.sh",
     ],
@@ -116,3 +118,11 @@ def test_t8_covers_seed_checkpoints_ladder_and_dmid():
     assert "SEEDS=(1 2)" in text and "--array=0-1" in text
     assert "--drift" in text and "runs_t8_pm${PM}.csv" in text
     assert "accv_dmid_eval.yaml" in text and "raw_t8_dmid" in text
+
+
+def test_t9_retrains_seed_checkpoints_that_t8_evaluates():
+    t9 = (SLURM / "accv_t9.sbatch").read_text()
+    cfgs = _bash_array(t9, "CONFIGS")
+    assert all((REPO / "configs" / c).exists() for c in cfgs)
+    assert sorted({c.rsplit("_seed", 1)[1] for c in cfgs}) == ["1.yaml", "2.yaml"]
+    assert "--array=0-9" in t9
