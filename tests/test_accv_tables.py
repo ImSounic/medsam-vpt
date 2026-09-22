@@ -3,10 +3,13 @@
 import pandas as pd
 
 from scripts.accv_tables import (
+    calibration_table_tex,
     detector_table_tex,
     multiseed_table_tex,
     risk_coverage_table_tex,
+    robustness_levels_table_tex,
     threshold_sweep_table_tex,
+    wilcoxon_levels_table_tex,
 )
 
 
@@ -222,3 +225,85 @@ def test_risk_coverage_table_recall_and_residual(tmp_path):
     tex = risk_coverage_table_tex(pts, runs=("lora_seed0",), datasets=("busi",))
     assert r"top 10\%" in tex and r"top 20\%" in tex
     assert "0.87 / 0.015" in tex and "0.094 & 0.010" in tex
+
+
+def test_robustness_levels_table_has_pm_columns_and_std(tmp_path):
+    csv = tmp_path / "curves.csv"
+    pd.DataFrame(
+        [
+            {
+                "curve": "CKA pm20",
+                "dataset": "busi",
+                "level": 0,
+                "dice_mean": 0.826,
+                "dice_std": 0.008,
+                "n_seeds": 3,
+            },
+            {
+                "curve": "CKA pm20",
+                "dataset": "busi",
+                "level": 20,
+                "dice_mean": 0.80,
+                "dice_std": 0.01,
+                "n_seeds": 3,
+            },
+            {
+                "curve": "CKA pm0",
+                "dataset": "busi",
+                "level": 0,
+                "dice_mean": 0.81,
+                "dice_std": float("nan"),
+                "n_seeds": 1,
+            },
+        ]
+    ).to_csv(csv, index=False)
+    tex = robustness_levels_table_tex(csv, datasets=("busi",))
+    assert "0\\,px & 20\\,px" in tex
+    assert "0.826 $\\pm$ 0.008" in tex and "& 0.810 &" in tex
+
+
+def test_wilcoxon_levels_table(tmp_path):
+    csv = tmp_path / "w.csv"
+    pd.DataFrame(
+        [
+            {
+                "dataset": "busi",
+                "level": 20,
+                "n_pairs": 1941,
+                "n_seeds": 3,
+                "mean_delta": 0.0526,
+                "median_delta": 0.0118,
+                "frac_improved": 0.58,
+                "p_raw": 1e-31,
+                "p_holm": 5e-31,
+            },
+        ]
+    ).to_csv(csv, index=False)
+    tex = wilcoxon_levels_table_tex(csv, datasets=("busi",))
+    assert "BUSI (far-OOD) & 20 & 1941 & +0.053 & +0.012 & 58\\%" in tex
+
+
+def test_calibration_table(tmp_path):
+    csv = tmp_path / "cal.csv"
+    pd.DataFrame(
+        [
+            {
+                "run_name": "lora_seed0",
+                "dataset": "busi",
+                "n": 647,
+                "ece": 0.158,
+                "iou_pred_mean": 0.511,
+                "iou_mean": 0.669,
+            },
+            {
+                "run_name": "lora_seed0",
+                "dataset": "cbis_ddsm",
+                "n": 362,
+                "ece": 0.129,
+                "iou_pred_mean": 0.50,
+                "iou_mean": 0.379,
+            },
+        ]
+    ).to_csv(csv, index=False)
+    tex = calibration_table_tex(csv)
+    assert "LoRA & 0.16 & 0.51 & 0.67 & 0.13 & 0.50 & 0.38" in tex

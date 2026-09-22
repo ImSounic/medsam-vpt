@@ -189,6 +189,93 @@ def risk_coverage_table_tex(
     return "\n".join(lines) + "\n"
 
 
+def robustness_levels_table_tex(
+    curves_csv: Path, datasets=("isic2018_test", "ph2", "busi", "cbis_ddsm")
+) -> str:
+    """Supplement: Dice mean +- std over seeds per (curve, dataset) at every box-expansion level."""
+    c = pd.read_csv(curves_csv)
+    levels = sorted(c.level.unique())
+    lines = [
+        r"\begin{tabular}{ll" + "c" * len(levels) + "}",
+        r"\toprule",
+        "Model & Dataset & " + " & ".join(f"{int(l)}\\,px" for l in levels) + r" \\",
+        r"\midrule",
+    ]
+    for curve in list(dict.fromkeys(c.curve)):
+        for ds in datasets:
+            g = c[(c.curve == curve) & (c.dataset == ds)]
+            if not len(g):
+                continue
+            cells = []
+            for l in levels:
+                r = g[g.level == l]
+                if not len(r):
+                    cells.append("--")
+                    continue
+                m, sd, n = (
+                    float(r.dice_mean.iloc[0]),
+                    float(r.dice_std.iloc[0]),
+                    int(r.n_seeds.iloc[0]),
+                )
+                cells.append(
+                    f"{m:.3f} $\\pm$ {sd:.3f}" if n > 1 and sd == sd else f"{m:.3f}"
+                )
+            lines.append(
+                f"{curve} & {DATASET_LABEL.get(ds, ds)} & " + " & ".join(cells) + r" \\"
+            )
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    return "\n".join(lines) + "\n"
+
+
+def wilcoxon_levels_table_tex(
+    wilcoxon_csv: Path, datasets=("isic2018_test", "ph2", "busi", "cbis_ddsm")
+) -> str:
+    """Supplement: paired Wilcoxon (CKA minus no-CKA, pm20 training) per dataset and expansion level."""
+    w = pd.read_csv(wilcoxon_csv)
+    lines = [
+        r"\begin{tabular}{lrrrrrr}",
+        r"\toprule",
+        r"Dataset & Level (px) & Pairs & Mean $\Delta$ & Median $\Delta$ & Improved & $p$ (Holm) \\",
+        r"\midrule",
+    ]
+    for ds in datasets:
+        for _, r in w[w.dataset == ds].sort_values("level").iterrows():
+            lines.append(
+                f"{DATASET_LABEL.get(ds, ds)} & {int(r.level)} & {int(r.n_pairs)} & "
+                f"{r.mean_delta:+.3f} & {r.median_delta:+.3f} & {100 * r.frac_improved:.0f}\\% & {_p(r.p_holm)} \\\\"
+            )
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    return "\n".join(lines) + "\n"
+
+
+def calibration_table_tex(calibration_csv: Path, datasets=("busi", "cbis_ddsm")) -> str:
+    """Supplement: ECE of the IoU estimate, its mean, and the true mean IoU per method and far-OOD set."""
+    c = pd.read_csv(calibration_csv)
+    cols = " & ".join(
+        f"\\multicolumn{{3}}{{c}}{{{DATASET_LABEL.get(d, d)}}}" for d in datasets
+    )
+    sub = " & ".join("ECE & $\\hat{u}$ & IoU" for _ in datasets)
+    lines = [
+        r"\begin{tabular}{l" + "ccc" * len(datasets) + "}",
+        r"\toprule",
+        f"Method & {cols} \\\\",
+        f" & {sub} \\\\",
+        r"\midrule",
+    ]
+    for run in [r for r in METHOD_ORDER if r in set(c.run_name)]:
+        cells = []
+        for ds in datasets:
+            r = c[(c.run_name == run) & (c.dataset == ds)]
+            if len(r):
+                r = r.iloc[0]
+                cells += [f"{r.ece:.2f}", f"{r.iou_pred_mean:.2f}", f"{r.iou_mean:.2f}"]
+            else:
+                cells += ["--"] * 3
+        lines.append(f"{METHOD_LABEL.get(run, run)} & " + " & ".join(cells) + r" \\")
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    return "\n".join(lines) + "\n"
+
+
 CKA_LABEL = [
     (
         r"^lora_cka_oodonly_late_l10_seed\d+$",
@@ -309,6 +396,25 @@ def main(argv: list[str] | None = None) -> int:
         (args.out_dir / "supp_risk_coverage_pm0.tex").write_text(
             risk_coverage_table_tex(args.risk_coverage_csv)
         )
+    curves = args.multiseed_dir / "robustness_curves.csv"
+    if curves.exists():
+        (args.out_dir / "supp_robustness_levels.tex").write_text(
+            robustness_levels_table_tex(curves)
+        )
+    wilcoxon = args.multiseed_dir / "paired_wilcoxon.csv"
+    if wilcoxon.exists():
+        (args.out_dir / "supp_wilcoxon_levels.tex").write_text(
+            wilcoxon_levels_table_tex(wilcoxon)
+        )
+    for tag, csv in [
+        ("pm0", args.detector_csv_tight),
+        ("pm50", args.detector_csv),
+    ]:
+        cal = csv.with_name("calibration.csv")
+        if cal.exists():
+            (args.out_dir / f"supp_calibration_{tag}.tex").write_text(
+                calibration_table_tex(cal)
+            )
     for p in sorted(args.out_dir.glob("*.tex")):
         print(f"[tables] wrote {p}")
     return 0

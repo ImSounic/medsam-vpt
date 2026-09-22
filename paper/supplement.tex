@@ -1,0 +1,135 @@
+% Supplementary material for the ACCV 2026 TrustFMI submission "Protect the Decoder".
+% Same class and conventions as main.tex; double-blind, no names or links.
+\documentclass[runningheads]{llncs}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{multirow}
+\usepackage[hidelinks]{hyperref}
+\renewcommand{\thetable}{S\arabic{table}}
+\renewcommand{\thefigure}{S\arabic{figure}}
+\renewcommand{\thesection}{S\arabic{section}}
+
+\begin{document}
+
+\title{Supplementary Material:\\Protect the Decoder: Representation-Preserving Adaptation and Failure Detection for Far-OOD MedSAM}
+\titlerunning{Protect the Decoder: Supplement}
+\author{Anonymous Submission}
+\authorrunning{Anonymous}
+\institute{}
+
+\maketitle
+
+This supplement holds the tables and figures the main text refers to: the prompt-robustness numbers behind the six-curve figure with their paired tests (Sect.~\ref{sup:robust}), the held-out DMID results (Sect.~\ref{sup:dmid}), the 50\,px failure-detection table (Sect.~\ref{sup:pm50}), the failure-threshold sensitivity check (Sect.~\ref{sup:thresh}), the risk-coverage analysis behind the review-budget numbers (Sect.~\ref{sup:rc}), and the calibration of the decoder's IoU estimate (Sect.~\ref{sup:cal}). All numbers are produced by the released scripts from the per-image result files.
+
+\section{Prompt robustness per expansion level}
+\label{sup:robust}
+
+Table~\ref{tab:sup_robust} lists the Dice values plotted in the main text's six-curve figure: LoRA with and without the decoder CKA loss under three training regimes (tight boxes, 20\,px jitter, random jitter up to 100\,px), evaluated with boxes expanded outward by up to 0, 20, 50, 100 and 200\,px. Entries with a standard deviation are means over seeds 0 to 2; the others are seed 0. Table~\ref{tab:sup_wilcoxon} gives the paired Wilcoxon signed-rank test between the two 20\,px-trained models at each level, pairs matched on seed and image, with Holm correction over the four datasets at each level.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Dice against box expansion for the six models of the main text's robustness figure. Mean $\pm$ std over three seeds where available.}
+  \label{tab:sup_robust}
+  \scriptsize
+  \input{tables/supp_robustness_levels}
+\end{table}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Paired per-image Dice difference, CKA minus no-CKA (both 20\,px training), at each evaluation level. Improved: fraction of pairs with a positive difference.}
+  \label{tab:sup_wilcoxon}
+  \scriptsize
+  \input{tables/supp_wilcoxon_levels}
+\end{table}
+
+\section{Held-out mammography set (DMID)}
+\label{sup:dmid}
+
+DMID was used once, after every model and every hyperparameter was fixed. Table~\ref{tab:sup_dmid} reports tight-box Dice and HD95 on its 269 annotated mammograms for the seven strategies and the CKA-regularised LoRA variants; the ranking matches CBIS-DDSM in every comparison made in the main text. The row marked $n=2$ is the mean of seeds 1 and 2 of that configuration.
+
+\begin{table}[htbp]
+  \centering
+  \caption{DMID, tight boxes, 269 images. HD95 in pixels on the 1024 grid.}
+  \label{tab:sup_dmid}
+  \input{tables/dmid}
+\end{table}
+
+\section{Failure detection under 50\,px box jitter}
+\label{sup:pm50}
+
+Table~\ref{tab:sup_pm50} repeats the main text's detector table with boxes expanded by up to 50\,px, the setting in which full fine-tuning and encoder-only LoRA produce enough failures to be scored on the ladder. The IoU estimate detects these prompt-induced failures for every method while drift does not, the pattern discussed in the main text.
+
+\begin{table}[htbp]
+  \centering
+  \caption{AUROC / AUPRC for detecting per-image failures (Dice below 0.5) at 50\,px box jitter. Cells with fewer than 20 failures omitted; drift is zero by construction for zero-shot.}
+  \label{tab:sup_pm50}
+  \input{tables/detectors_pm50}
+\end{table}
+
+\section{Sensitivity to the failure threshold}
+\label{sup:thresh}
+
+The main text defines a failure as Dice below 0.5. Tables~\ref{tab:sup_thresh0} and~\ref{tab:sup_thresh50} recompute the drift AUROC for LoRA and the two VPT variants with the threshold moved from 0.3 to 0.7, at tight boxes and at 50\,px jitter. The ordering of methods and datasets is unchanged at every threshold, and LoRA's values stay within 0.90 to 0.97 on BUSI and 0.73 to 0.82 on CBIS-DDSM at tight boxes.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Drift AUROC as a function of the Dice threshold that defines a failure, tight boxes.}
+  \label{tab:sup_thresh0}
+  \input{tables/supp_threshold_sweep_pm0}
+\end{table}
+
+\begin{table}[htbp]
+  \centering
+  \caption{As Table~\ref{tab:sup_thresh0}, at 50\,px box jitter.}
+  \label{tab:sup_thresh50}
+  \input{tables/supp_threshold_sweep_pm50}
+\end{table}
+
+\section{Risk-coverage analysis}
+\label{sup:rc}
+
+Ranking images by drift and flagging the top fraction for review gives, for each budget, the recall of failures among the flagged images and the failure rate that remains among the unflagged ones (the selective risk). Table~\ref{tab:sup_rc} lists both at four review budgets, together with the base failure rate and the area under the risk-coverage curve (AURC), for which a random ranking scores the base rate. Figure~\ref{fig:sup_rc} shows the full curves for drift (solid) and the IoU estimate (dashed).
+
+\begin{table}[htbp]
+  \centering
+  \caption{Tight boxes, failure = Dice below 0.5, ranking by drift. Cells: recall of failures / residual failure rate among unflagged images when the top 10, 20, 30 or 50 percent of images are flagged.}
+  \label{tab:sup_rc}
+  \scriptsize
+  \input{tables/supp_risk_coverage_pm0}
+\end{table}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\linewidth]{figures/risk_coverage_pm0.png}
+  \caption{Residual failure rate among unflagged images against the fraction flagged, tight boxes, for drift (solid) and the negated IoU estimate (dashed). A curve that falls quickly leaves few failures unreviewed.}
+  \label{fig:sup_rc}
+\end{figure}
+
+\section{Calibration of the IoU estimate}
+\label{sup:cal}
+
+Tables~\ref{tab:sup_cal0} and~\ref{tab:sup_cal50} give the ten-bin expected calibration error of the decoder's IoU estimate $\hat{u}$ against the true IoU on the two far-OOD sets, with the mean of each. After adaptation the estimate sits near 0.5 regardless of the true value; Fig.~\ref{fig:sup_scatter} shows the collapse for LoRA at tight boxes.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Calibration of the IoU estimate at tight boxes: expected calibration error, mean predicted IoU $\hat{u}$, mean true IoU.}
+  \label{tab:sup_cal0}
+  \input{tables/supp_calibration_pm0}
+\end{table}
+
+\begin{table}[htbp]
+  \centering
+  \caption{As Table~\ref{tab:sup_cal0}, at 50\,px box jitter.}
+  \label{tab:sup_cal50}
+  \input{tables/supp_calibration_pm50}
+\end{table}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.7\linewidth]{figures/failure_detection_pm0_scatter.png}
+  \caption{Predicted IoU $\hat{u}$ against Dice per image for LoRA on the far-OOD sets at tight boxes. The estimate stays in a band around 0.5 while Dice spans the full range.}
+  \label{fig:sup_scatter}
+\end{figure}
+
+\end{document}
