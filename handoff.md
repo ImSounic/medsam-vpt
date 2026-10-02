@@ -1,21 +1,195 @@
 # Handoff
 
-## ⚠️ Machine switch — 2026-09-15 (read this first)
+## Read this first: back on the Linux laptop (2 October 2026)
 
-**The Linux laptop (CachyOS, `/home/imsounic/Projects/`) is out for screen repair. All work happens on a Mac
-for the next 1–2 weeks (roughly until early October 2026).** Update this section when the laptop is back.
+From 15 September to 2 October 2026 all work happened on a Mac mini while the Linux laptop
+(CachyOS, `/home/imsounic/Projects/medsam-vpt`) was in repair. Everything produced in that
+period is on GitHub, branch `accv-trustfmi`. This file was rewritten on 2 October 2026 as the
+last step before switching back.
 
-- **Where the code is:** a full copy of `~/Projects` and `~/University` was made on 2026-09-15 onto the external
-  1 TB exFAT drive (volume `5497-ED62`) at `<drive>/Projects/<project>/` and `<drive>/University/`. The originals
-  on the Linux laptop were left untouched. When the laptop returns, reconcile via git (preferred) or rsync back.
-- **Before working on the Mac:** copy the project from the drive onto the Mac's internal disk. Do not run git or
-  build tools directly on exFAT — it is slow, case-insensitive, and stores no symlinks or executable bits, so
-  `git status` may show spurious mode changes (`git config core.fileMode false` silences that).
-- **Not copied (rebuild on the Mac):** `node_modules/`, `.next/`, `.venv/`, `venv/`, `__pycache__/`,
-  `.mypy_cache/`, `.pytest_cache/`, `.cache/`. Linux-built binaries would not run on macOS anyway.
-- **No CUDA on the Mac:** anything GPU-bound goes to the HPC/Colab or runs on MPS/CPU.
-- **Git state at the time of the copy:** branch `accv-trustfmi`, **diverged from origin**: 5 local commits (T7 drift dumps, DMID held-out set, hook-ablation seeds, paper text) vs 2 remote commits pushed from elsewhere (budget sweep seeds 1–2, 3-seed budget graphs with mean/std bands). The 5 local commits are safe on GitHub as branch `accv-trustfmi-laptop-2026-09-15` (pushed 2026-09-15). **Merging is still TODO**: `scripts/plot_budget.py` conflicts in 3 hunks (both sides rewrote the plotting body) and `figures/accv/budget_curves.png` conflicts (binary — just regenerate it after merging). On the Mac: `git fetch`, then merge or rebase `accv-trustfmi-laptop-2026-09-15` onto `origin/accv-trustfmi`, resolve `plot_budget.py` by hand, rerun it, push. 33 uncommitted (`results/summary_full.csv` modified; `PROJECT_STATE.md` and `bbox_robustness/results*/` untracked).
-- **Project-specific:** `data/` (28 GB: isic train/val/test, ph2, busi, cbis-ddsm, dmid) and `checkpoints/` (3.3 GB, incl. `runs/full_ft_seed0.zip`) are on the drive. Do not copy them onto the Mac's disk unless needed — configs use relative `data/<set>` roots, so either symlink `data` → the drive or run with cwd on the drive. No CUDA on the Mac: `device_utils.py` falls back to MPS/CPU (AMP off), which is fine for eval/CKA; full FT needs ≥16 GB VRAM → HPC/Colab. Related files copied to the drive root: `Projects/accv-trustfmi-overleaf.zip` (Overleaf export, 2026-09-15) and `Projects/ph2_for_carlo.tgz` (212 MB, 2026-09-14).
+### Getting the laptop up to date
+
+The laptop checkout was left as it stood on 15 September: 5 local commits ahead of origin, one
+modified file, and `handoff.md` untracked. All five commits are now on the remote (they were
+merged with Carlo's two commits on 21 September, merge commit `bb998ef`), so the pull is a
+fast-forward once two local obstacles are out of the way:
+
+```bash
+cd ~/Projects/medsam-vpt
+git status --short | grep -v '^??'          # expect only: M results/summary_full.csv
+git checkout -- results/summary_full.csv    # the repaired CSV is in the remote now
+mv handoff.md handoff.laptop-2026-09-15.md  # untracked copy would block the pull
+git fetch && git checkout accv-trustfmi && git pull
+git rev-list --left-right --count origin/accv-trustfmi...HEAD   # expect 0 0
+```
+
+If `git pull` reports other untracked files that would be overwritten, move them aside the same
+way and compare afterwards. The backup branch `accv-trustfmi-laptop-2026-09-15` on the remote
+can be deleted once the pull is confirmed.
+
+### What is not in git
+
+- `data/` (28 GB) and `checkpoints/` (3.2 GB, seed 0 only): on the laptop and on the external
+  1 TB exFAT drive under `Projects/medsam-vpt/`.
+- Seed 1 and seed 2 tight-box checkpoints for decoder-only, VPT-shallow, VPT-deep, LoRA and
+  full FT: only on the UT HPC, `~/medsam-vpt/checkpoints/runs_seed{1,2}/<method>_seed{1,2}/best.pth`.
+  They were retrained there on 22 September (job 592130) because the originals lived on a
+  JupyterLab machine that is no longer reachable.
+- The Overleaf project. Co-authors edit there. If the submitted text matters, Overleaf is
+  authoritative and `paper/` in the repo may be one step behind.
+- Older result folders that were never committed (`bbox_robustness/results*`, `results/raw`,
+  `results/figures`, `results/mechanism`, `results/paper`, `PROJECT_STATE.md`, `colab/`). They
+  exist on the laptop from before the switch.
+
+### Environment notes for the laptop
+
+- Training and evaluation: conda env `mlenv` with CUDA, as before. The six torch-dependent test
+  files (`test_cka_hooks`, `test_dmid`, `test_eval_detectors`, `test_isic_subset`,
+  `test_methods`, `test_train_forward`) could not run on the Mac. Run `pytest tests` once on the
+  laptop to confirm the whole suite. All other tests passed on 23 September.
+- Analysis scripts need only numpy, pandas, scipy, matplotlib.
+- Paper: compiled locally with `tectonic main.tex` and `tectonic supplement.tex` inside
+  `paper/` (plain `llncs` class). Build outputs are ignored by `paper/.gitignore`; the
+  `*_llncs_preview.pdf` files are tracked on purpose.
+- Poster and talk: `miccai_safer_talk/build_poster.js` and `build_deck.js` hardcode
+  `REPO = "/Users/imsounic/medsam-vpt"`. Change that to the laptop path before rebuilding.
+  They need `pptxgenjs` (`npm install pptxgenjs` in any directory, then run with
+  `NODE_PATH=<that dir>/node_modules node build_poster.js`).
+- `PROJECT_STATE.md` is a June 2026 document about the MICCAI-era phases. Treat it as history.
+  The current ACCV documents are this file, `docs/superpowers/specs/2026-09-10-accv-trustfmi-paper-design.md`,
+  `docs/superpowers/plans/2026-09-10-accv-trustfmi-implementation.md` and
+  `docs/superpowers/handoff-dmid-carlo.md`.
+
+## ACCV 2026 TrustFMI paper: state on 2 October 2026
+
+"Protect the Decoder: Representation-Preserving Adaptation and Failure Detection for Far-OOD
+MedSAM". ACCV 2026 Workshop on Trustworthy Foundation Models in Medical Imaging, OpenReview,
+double-blind, 6 to 8 LNCS pages excluding references.
+
+| Date | Event |
+|---|---|
+| 25 Sep 2026, 23:59 | submission deadline (passed) |
+| 16 Oct 2026 | notification |
+| 23 Oct 2026 | camera-ready |
+| 14 Dec 2026 | workshop, Osaka |
+
+Whether and what was uploaded to OpenReview is not recorded in the repo. Ask the author, and
+compare the submitted PDF with Overleaf before editing anything.
+
+### Paper source
+
+`paper/main.tex` and `paper/supplement.tex` (two documents sharing `sections/`, `tables/`,
+`figures/`). On 23 September the local compile gave 8 body pages with about four lines of
+slack, references on pages 9 to 10, and an 8-page supplement. Every table under `paper/tables/`
+is generated by `python scripts/accv_tables.py` from the result CSVs; do not edit them by hand.
+
+### Claims and the evidence behind them
+
+1. **CKA-regularised LoRA** (decoder hooks, OOD-only 32-image probe, lambda 10, 20 px training).
+   Three seeds: far-OOD Dice +0.051 on BUSI and +0.104 on CBIS-DDSM at no in-domain cost
+   (`results/accv/cka_multiseed/`). Hook ablation over three seeds: encoder-only anchoring
+   hurts, both is best (`figures/accv/hook_ablation.*`; figure is in the supplement).
+2. **Adaptation budget and drift.** LoRA drops below zero-shot far-OOD at 250 images in all
+   three seeds (0.670 +/- 0.031), recovers at 1000, while decoder-only and encoder-only LoRA
+   never collapse. Far-OOD decoder drift triples from 50 to 250 images. Dice is three-seed
+   (`results/accv/runs_t2.csv` seed 0, `runs_t6.csv` seeds 1 to 2, from Carlo); the drift panel
+   and the 2595-image point are seed 0 (`results/accv/raw_t7`). Figure: `scripts/plot_budget.py
+   --drift-raw-dir results/accv/raw_t7`.
+3. **Label-free failure detection.** Per-image decoder drift against base MedSAM, AUROC over
+   three seeds: LoRA 0.96 +/- 0.01 on BUSI, 0.80 +/- 0.02 on CBIS-DDSM, 0.69 +/- 0.11 on the
+   held-out DMID set. VPT is strong on the ladder (0.92 to 0.95 and 0.69 to 0.72) and weak on
+   DMID (0.55 to 0.57). The decoder's IoU estimate is at chance for PEFT failures and reacts to
+   poor boxes rather than to modality (full FT on DMID at tight boxes: 0.32 +/- 0.03).
+   Threshold sensitivity (Dice 0.3 to 0.7) and risk-coverage (flag top 20 percent of BUSI by
+   drift: 87 percent of LoRA failures, residual failure rate 1.5 percent) are seed 0.
+
+### What changed after the supervisor review (21 to 23 September)
+
+Alexia's comments asked for weaker wording on "the model flags its own failures", for threshold
+sensitivity and risk-coverage curves, for a domain untouched by the regulariser, and for the
+novelty to be placed against prior feature-distortion work. In response:
+
+- Section 7 is "Label-Free Failure Detection"; it states that drift needs the base model and
+  was validated against ground truth offline. Causal wording was softened to "associated with".
+- New analyses: `scripts/failure_detection.py --thresholds ...`, `scripts/risk_coverage.py`,
+  `scripts/detector_multiseed.py`, detector on DMID.
+- Table 2 is tight-box AUROC as mean and std over three seeds with a DMID column. AUPRC,
+  per-seed values, the seed 0 table and the 50 px table are in the supplement.
+- Related work cites Tomihari and Sato 2024, Tan et al. 2024, Zhang et al. 2025 and Chen et al.
+  2025, says outright that preserving pretrained representations is not new, and frames the
+  hypothesis as where representations move, not how much.
+- The "Prior results" paragraph and the hook-ablation figure left the main text to fit 8 pages.
+
+### Experiment map
+
+| Job | What | Outputs |
+|---|---|---|
+| T1 | CKA seeds 1 to 2, hook ablation seed 0 | `cka/results/runs_accv_t1.csv`, `bbox_robustness/results_accv_t1*` |
+| T2 | budget sweep seed 0 | `results/accv/runs_t2.csv`, `raw_t2` |
+| T3 | detector dumps, 7 methods, tight and 50 px, seed 0 | `results/accv/raw_t3_pm0`, `raw_t3_pm50` |
+| T4 | retrain of lost CKA pm0 and encoder-only seed 0 | `runs_cka_pm0_retrained.csv`, `raw_encoder_only` |
+| T5 | hook-ablation seeds 1 to 2 | `cka/results/runs_accv_t5.csv` |
+| T6 | budget sweep seeds 1 to 2 (Carlo's account) | `results/accv/runs_t6.csv`, `raw_t6` |
+| T7 | drift dumps across budgets, seed 0 | `results/accv/runs_t7.csv`, `raw_t7` |
+| T8 | detector dumps seeds 1 to 2, ladder and DMID | `results/accv/raw_t8_pm0`, `raw_t8_dmid`, `runs_t8_*.csv` |
+| T9 | retrain seed 1 to 2 tight-box checkpoints (5 methods) | HPC `checkpoints/runs_seed{1,2}/` |
+| DMID | held-out mammography eval, seed 0 and CKA variants | `results/accv/runs_dmid.csv`, `raw_dmid` |
+
+SLURM scripts are in `cka/slurm/accv_*.sbatch`.
+
+### Regenerating everything that feeds the paper
+
+```bash
+python scripts/failure_detection.py --raw-dir results/accv/raw_t3_pm0 --thresholds 0.5 0.3 0.4 0.6 0.7 --out-dir results/accv/failure_detection_pm0_sweep
+python scripts/failure_detection.py --raw-dir results/accv/raw_t3_pm50 --thresholds 0.5 0.3 0.4 0.6 0.7 --out-dir results/accv/failure_detection_pm50_sweep
+python scripts/risk_coverage.py --raw-dir results/accv/raw_t3_pm0 --out-dir results/accv/risk_coverage_pm0 --figure figures/accv/risk_coverage_pm0.png
+python scripts/detector_multiseed.py --raw-dirs results/accv/raw_t3_pm0 results/accv/raw_t8_pm0 results/accv/raw_dmid results/accv/raw_t8_dmid
+python scripts/plot_budget.py --drift-raw-dir results/accv/raw_t7
+python scripts/accv_tables.py
+```
+
+### HPC
+
+- `ssh s3702111@hpc-head2.ewi.utwente.nl` (eduVPN required), repo at `~/medsam-vpt`, conda env
+  `medsam-vpt`, submit with `--account=dmb --qos=research`.
+- The HPC checkout is not a git repository. Code goes up with `bash cka/slurm/sync_to_hpc.sh`
+  (archives the committed branch); results come back with `rsync`.
+- Do not run `cka/slurm/submit_accv.sh` again. It resubmits the whole T1 to T3 chain. Submit
+  individual jobs with `sbatch`.
+- Compute nodes have no internet; install packages on the head node.
+- No jobs were running or queued on 23 September.
+
+### Open items
+
+- If accepted: fill the TODOs in `paper/sections/09_declarations.tex` (repository URL, CRediT
+  roles, funding, AI-use statement), restore author names, and replace the anonymised
+  `prior2026safer` bibliography entry with the real MICCAI SAFER citation.
+- Confirm the page count in the official ACCV 2026 template. The local count used plain `llncs`.
+- Figure 1 (six robustness curves) is set at 64 percent of the text width and is small. A
+  two-by-two version would read better but costs about eight lines.
+- Still single-seed: the drift panel of the budget figure, the 2595-image budget point, the
+  threshold sweep, the risk-coverage numbers, encoder-only LoRA in the detector table, and the
+  CKA variants on DMID. Seed 1 and 2 checkpoints for the first three exist (HPC and Carlo's
+  checkout), so these are eval-only jobs if a reviewer asks.
+- Merge commit `bb998ef` carries a Co-Authored-By trailer the author does not want in the
+  history. Removing it needs a history rewrite and a force-push, coordinated with Carlo.
+- A reply to Alexia summarising what was done in response to her review was offered but not
+  written.
+
+## MICCAI 2026 SAFER workshop
+
+"When Adaptation Hurts: Connecting Representational Drift to OOD Failures in MedSAM
+Fine-Tuning" was accepted as oral plus poster and scheduled for 27 September 2026 in
+Strasbourg. Materials are in `miccai_safer_talk/`:
+
+- `talk_16x9.pptx` / `.pdf` and `talk_script.md`: the 12-slide talk and its script.
+- `Final_Submission.pptx` / `.pdf`: the A0 poster in its final form (built 23 September with the
+  co-authors' comments applied and the FER Zagreb, ETH Zurich and University of Twente logos).
+  `build_poster.js` writes `poster_A0.pptx`; the `Final_Submission` files are renamed copies.
+- `build_deck.js`, `build_poster.js`, `logos/`, `pdf_images/`, `paper.pdf` (camera-ready).
+
+The ACCV paper cites this work as anonymised prior work and must not reuse its text. Keep
+ACCV-only content (CKA regulariser, budget sweep, drift detector) out of the MICCAI materials.
 
 ## Project Goal
 
@@ -140,45 +314,48 @@ results/              runs.csv, summary CSVs, results/figures/*.png (gitignored 
 
 ## Current State
 
-### Fully working
-- All 6 on-branch methods train and evaluate: zero_shot, decoder_only, vpt_shallow, vpt_deep, lora, full_ft.
-- CKA-aware LoRA training (9 configs: early/mid/late hooks x lambda 0.1/1.0/10.0).
-- Multi-seed pipeline (3 seeds per method x jitter) with significance tests.
-- Bbox robustness evaluation at 5 perturbation levels (0/20/50/100/200 px) across all 4 datasets.
-- Resume from checkpoint (`--resume` flag, restores optimizer moments + scheduler LR).
-- Mixed-precision training (CUDA only; auto-disabled on MPS/CPU).
-- Thermal cooldown between train/val (configurable, for laptop GPU throttling).
-- All analysis scripts, comparison plots, and paper figures are generated and committed.
+### Fully working on `accv-trustfmi`
+- Seven methods train and evaluate: zero_shot, decoder_only, vpt_shallow, vpt_deep, lora,
+  lora_encoder_only, full_ft.
+- CKA-aware LoRA training with decoder, encoder (`encoder_neck` plus last two blocks) or both
+  hook sets, OOD-only probe.
+- Fixed step-budget training on deterministic prefix subsets (`train.max_steps`,
+  `data.max_train_samples`, `subset_seed`), `--quick` smoke mode.
+- Evaluation writes per-image `iou_pred`, and with `--drift` the decoder and encoder drift
+  against base MedSAM; `--bbox-perturb`, `--results-csv`, `--per-image-dir` overrides.
+- DMID loader (`src/data/dmid.py`, needs `tifffile` and `imagecodecs`).
+- Multi-seed pipeline, bbox robustness evaluation at 0/20/50/100/200 px, resume, AMP on CUDA.
+- Analysis: `scripts/accv_cka_multiseed.py`, `failure_detection.py`, `risk_coverage.py`,
+  `detector_multiseed.py`, `plot_budget.py`, `plot_hook_ablation.py`, `accv_tables.py`.
 
-### Not on this branch
-- **Encoder-only LoRA**: reported in the paper as the best parameter-efficient method but its training config is not on `main`. The method freezes the mask decoder and applies LoRA only to the encoder QKV. Results were produced on a separate branch or environment.
-
-### Local branch
-- `my-final-eval` branch exists locally but is not relevant to current work.
-
-## Active Work
-
-The last meaningful commits were repo cleanup and paper alignment:
-- `569464a` Made bbox-jitter robustness the README headline.
-- `b19c7a1` Slimmed the repo from 508 MB to 74 MB by purging intermediate artifacts from git history via git-filter-repo.
-- `41ec431` De-slopped all comments and docstrings (removed AI-generated style, em/en dashes, collapsed multi-line comments).
-
-The paper is submitted. The coding work is done. This handoff exists as a safety net in case anything needs revisiting.
+### Branches
+- `accv-trustfmi`: all ACCV work, the paper and the MICCAI talk materials. Work here.
+- `main`: the MICCAI-era code. It does not have `lora_encoder_only` or anything above.
+- `accv-trustfmi-laptop-2026-09-15`: remote backup of the laptop's pre-switch commits, now
+  contained in `accv-trustfmi`.
+- `my-final-eval`: local only, not relevant.
 
 ## Known Issues / TODOs
 
-1. **Bbox jitter RNG is unseeded**: `_bbox_from_mask()` in `src/data/isic.py:30` uses `np.random.default_rng()` without a seed argument. This means bbox perturbation is non-deterministic across runs even with `--seed` set. Training-time augmentation varies per epoch (which is fine for training diversity) but eval reproducibility at non-zero jitter depends on this. For exact reproducibility, pass the global seed to the rng.
-
-2. **Decoder-only trained for 10 epochs, others for 6**: `configs/decoder_only.yaml:20` sets `epochs: 10` while all other methods use 5-6 epochs. This was intentional (decoder-only converges slower with only 4M params and no encoder signal) but means wall-clock and epoch counts are not directly comparable across methods.
-
-3. **Encoder-only LoRA missing from main**: The paper reports 7 methods but the code only implements 6. Encoder-only LoRA (freeze decoder, LoRA on encoder QKV only) is the strongest parameter-efficient result in the paper. To implement it: add an `encoder_only_lora` path in `src/models/methods.py` that calls `apply_lora()` then re-freezes `sam.mask_decoder`.
-
-4. **CKA math must run in fp32**: `src/train.py:152` explicitly disables autocast for CKA computation. The Frobenius norms in `||X^T X||_F^2` reach ~1e10, which overflows fp16's 65504 max. This was a production bug that caused NaN losses before the fix (commit `b1acb87`).
-
-5. **peft listed in requirements.txt but unused**: `requirements.txt:11` lists `peft>=0.10.0` but LoRA is implemented from scratch. It was likely needed during early development. Removing it won't break anything.
-
-6. **Repo is private on GitHub**: After the git-filter-repo history rewrite, the repo was force-pushed. The GitHub remote is private. Any external URL references (e.g., for Canva asset uploads) won't resolve without making it public or using local files.
+1. **Bbox jitter RNG is unseeded in training**: `_bbox_from_mask()` in `src/data/isic.py` uses
+   `np.random.default_rng()` without a seed, so training-time jitter is not controlled by
+   `--seed`. Evaluation jitter in the robustness scripts is seeded per image.
+2. **Decoder-only trained for 10 epochs, others for 6**: intentional, but epoch counts are not
+   comparable across methods.
+3. **CKA math must run in fp32**: the CKA loss is computed with autocast disabled; fp16
+   overflows on the Frobenius norms.
+4. **`peft` is listed in requirements.txt but unused**: LoRA is hand-rolled in
+   `src/models/lora.py`.
+5. **Seed 1 and 2 detector checkpoints are retrained models**, not the checkpoints behind the
+   MICCAI multi-seed numbers. They are independent seeds with the same configs, which is all the
+   detector table needs.
+6. **The repository is private on GitHub.**
 
 ## Context for Next Session
 
-This is a completed university research project comparing MedSAM fine-tuning strategies, with a MICCAI 2026 paper submitted. The codebase implements 6 of the 7 methods discussed in the paper (encoder-only LoRA is the missing one). All training, evaluation, multi-seed statistical analysis, and figure generation are done. The repo was recently cleaned: git history was rewritten to remove 434 MB of intermediate artifacts, all comments were de-slopped to read like terse human-written code, and the README was rewritten to match the paper. The only substantive gap between paper and code is encoder-only LoRA on main. If resuming work, start by reading `README.md` for the full experimental setup and results, then `src/models/methods.py` to understand the method dispatch, and `src/train.py` for the training loop. Configs are in `configs/` with a 1:1 mapping to runs.
+The ACCV workshop paper was written, revised after the supervisor's review, cut to eight pages
+and handed to Overleaf between 21 and 23 September 2026; the MICCAI talk and poster were
+prepared in the same week. All of it is committed on `accv-trustfmi`. Nothing is running on the
+HPC. The next events are the ACCV notification on 16 October and, if accepted, the camera-ready
+on 23 October. Start by pulling the branch as described at the top, run the full test suite on
+the laptop, then ask the author what was submitted and whether Overleaf has moved since.
