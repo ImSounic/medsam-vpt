@@ -1,0 +1,28 @@
+\begin{tabular}{llccccccl}
+\toprule
+Method & Dataset & \multicolumn{3}{c}{drift AUROC} & \multicolumn{3}{c}{IoU-head AUROC} & Failures \\
+ & & s0 & s1 & s2 & s0 & s1 & s2 & \\
+\midrule
+Zero-shot & BUSI (far-OOD) & -- & -- & -- & -- & -- & -- & 8/--/-- \\
+Zero-shot & CBIS-DDSM (far-OOD) & -- & -- & -- & 0.49 & -- & -- & 40/--/-- \\
+Zero-shot & DMID (held-out) & -- & -- & -- & 0.47 & -- & -- & 67/--/-- \\
+Decoder-only FT & BUSI (far-OOD) & -- & -- & -- & -- & -- & -- & 2/3/3 \\
+Decoder-only FT & CBIS-DDSM (far-OOD) & -- & -- & -- & -- & -- & -- & 12/12/13 \\
+Decoder-only FT & DMID (held-out) & 0.43 & 0.26 & 0.48 & 0.63 & 0.49 & 0.45 & 53/54/55 \\
+VPT-shallow & BUSI (far-OOD) & 0.93 & 0.95 & 0.96 & 0.69 & 0.67 & 0.64 & 28/51/60 \\
+VPT-shallow & CBIS-DDSM (far-OOD) & 0.70 & 0.75 & 0.69 & 0.49 & 0.44 & 0.56 & 78/137/146 \\
+VPT-shallow & DMID (held-out) & 0.47 & 0.62 & 0.63 & 0.60 & 0.41 & 0.62 & 93/140/140 \\
+VPT-deep & BUSI (far-OOD) & 0.92 & 0.91 & 0.93 & 0.55 & 0.68 & 0.67 & 44/42/42 \\
+VPT-deep & CBIS-DDSM (far-OOD) & 0.66 & 0.71 & 0.71 & 0.52 & 0.42 & 0.56 & 113/150/105 \\
+VPT-deep & DMID (held-out) & 0.45 & 0.62 & 0.58 & 0.53 & 0.46 & 0.51 & 110/143/118 \\
+LoRA & BUSI (far-OOD) & 0.95 & 0.96 & 0.96 & 0.72 & 0.40 & 0.52 & 61/82/78 \\
+LoRA & CBIS-DDSM (far-OOD) & 0.82 & 0.77 & 0.81 & 0.46 & 0.46 & 0.62 & 152/130/173 \\
+LoRA & DMID (held-out) & 0.76 & 0.56 & 0.75 & 0.60 & 0.40 & 0.70 & 175/113/159 \\
+Encoder-only LoRA & BUSI (far-OOD) & -- & -- & -- & -- & -- & -- & 2/--/-- \\
+Encoder-only LoRA & CBIS-DDSM (far-OOD) & -- & -- & -- & -- & -- & -- & 12/--/-- \\
+Encoder-only LoRA & DMID (held-out) & 0.69 & -- & -- & 0.24 & -- & -- & 52/--/-- \\
+Full FT & BUSI (far-OOD) & -- & -- & -- & -- & -- & -- & 3/3/3 \\
+Full FT & CBIS-DDSM (far-OOD) & -- & -- & -- & -- & -- & -- & 14/13/13 \\
+Full FT & DMID (held-out) & 0.59 & 0.56 & 0.57 & 0.28 & 0.34 & 0.33 & 51/52/50 \\
+\bottomrule
+\end{tabular}

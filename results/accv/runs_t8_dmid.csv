@@ -1,0 +1,11 @@
+run_name,method,dataset,seed,dice_mean,dice_std,iou_mean,hd95_mean,trainable_params,peak_mem_mb,wall_clock_s,timestamp,notes
+decoder_only_seed2,decoder_only,dmid,2,0.7291,0.2616,0.6285,34.3711,4058340,5679,154.6,2026-09-22T15:13:57,drift;pm0
+vpt_shallow_seed2,vpt_shallow,dmid,2,0.4708,0.3032,0.3615,219.5906,4066020,5719,86.3,2026-09-22T15:15:39,drift;pm0
+decoder_only_seed1,decoder_only,dmid,1,0.7279,0.2616,0.6273,30.6557,4058340,5679,139.3,2026-09-22T15:17:02,drift;pm0
+vpt_deep_seed2,vpt_deep,dmid,2,0.5104,0.2974,0.3962,280.4608,4150500,5719,77.9,2026-09-22T15:17:05,drift;pm0
+lora_seed2,lora,dmid,2,0.4078,0.3335,0.3173,330.9931,4353252,5721,76.3,2026-09-22T15:18:27,drift;pm0
+vpt_shallow_seed1,vpt_shallow,dmid,1,0.4744,0.2980,0.3631,342.2814,4066020,5719,92.6,2026-09-22T15:18:46,drift;pm0
+full_ft_seed2,full_ft,dmid,2,0.7322,0.2583,0.6318,24.7868,93729252,6061,74.8,2026-09-22T15:19:48,drift;pm0
+vpt_deep_seed1,vpt_deep,dmid,1,0.4606,0.3002,0.3514,336.8035,4150500,5719,76.0,2026-09-22T15:20:12,drift;pm0
+lora_seed1,lora,dmid,1,0.5391,0.2903,0.4227,229.3444,4353252,5721,77.5,2026-09-22T15:21:37,drift;pm0
+full_ft_seed1,full_ft,dmid,1,0.7311,0.2582,0.6305,24.7569,93729252,6061,81.4,2026-09-22T15:23:06,drift;pm0

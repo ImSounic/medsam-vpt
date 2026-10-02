@@ -1,0 +1,14 @@
+\begin{tabular}{lcccccc}
+\toprule
+Method & \multicolumn{2}{c}{BUSI (far-OOD)} & \multicolumn{2}{c}{CBIS-DDSM (far-OOD)} & \multicolumn{2}{c}{DMID (held-out)} \\
+ & drift & IoU head & drift & IoU head & drift & IoU head \\
+\midrule
+Zero-shot & -- & -- & -- & 0.12 & -- & 0.27 \\
+Decoder-only FT & -- & -- & -- & -- & 0.20 $\pm$ 0.06 & 0.26 $\pm$ 0.08 \\
+VPT-shallow & 0.68 $\pm$ 0.08 & 0.16 $\pm$ 0.01 & 0.64 $\pm$ 0.12 & 0.35 $\pm$ 0.09 & 0.62 $\pm$ 0.17 & 0.50 $\pm$ 0.09 \\
+VPT-deep & 0.61 $\pm$ 0.11 & 0.14 $\pm$ 0.07 & 0.64 $\pm$ 0.06 & 0.36 $\pm$ 0.04 & 0.59 $\pm$ 0.13 & 0.46 $\pm$ 0.04 \\
+LoRA & 0.80 $\pm$ 0.05 & 0.14 $\pm$ 0.04 & 0.81 $\pm$ 0.04 & 0.45 $\pm$ 0.10 & 0.77 $\pm$ 0.15 & 0.62 $\pm$ 0.22 \\
+Encoder-only LoRA & -- & -- & -- & -- & 0.32 & 0.14 \\
+Full FT & -- & -- & -- & -- & 0.23 $\pm$ 0.01 & 0.13 $\pm$ 0.01 \\
+\bottomrule
+\end{tabular}

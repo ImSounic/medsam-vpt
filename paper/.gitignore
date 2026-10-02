@@ -1,0 +1,8 @@
+# tectonic/latex build outputs; the *_llncs_preview.pdf copies are tracked on purpose
+main.pdf
+supplement.pdf
+*.log
+*.blg
+*.aux
+*.bbl
+*.out

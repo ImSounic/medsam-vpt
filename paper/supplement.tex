@@ -12,7 +12,7 @@
 
 \begin{document}
 
-\title{Supplementary Material:\\Protect the Decoder: Representation-Preserving Adaptation and Failure Detection for Far-OOD MedSAM}
+\title{Supplementary Material: Protect the Decoder}
 \titlerunning{Protect the Decoder: Supplement}
 \author{Anonymous Submission}
 \authorrunning{Anonymous}
@@ -20,7 +20,7 @@
 
 \maketitle
 
-This supplement holds the tables and figures the main text refers to: the prompt-robustness numbers behind the six-curve figure with their paired tests (Sect.~\ref{sup:robust}), the held-out DMID results (Sect.~\ref{sup:dmid}), the 50\,px failure-detection table (Sect.~\ref{sup:pm50}), the failure-threshold sensitivity check (Sect.~\ref{sup:thresh}), the risk-coverage analysis behind the review-budget numbers (Sect.~\ref{sup:rc}), and the calibration of the decoder's IoU estimate (Sect.~\ref{sup:cal}). All numbers are produced by the released scripts from the per-image result files.
+This supplement holds the tables and figures the main text refers to: the prompt-robustness numbers behind the six-curve figure with their paired tests (Sect.~\ref{sup:robust}), the hook-placement figure (Sect.~\ref{sup:hooks}), the held-out DMID results (Sect.~\ref{sup:dmid}), per-seed and AUPRC values for the failure detectors (Sect.~\ref{sup:seeds}), the 50\,px failure-detection table (Sect.~\ref{sup:pm50}), the failure-threshold sensitivity check (Sect.~\ref{sup:thresh}), the risk-coverage analysis behind the review-budget numbers (Sect.~\ref{sup:rc}), and the calibration of the decoder's IoU estimate (Sect.~\ref{sup:cal}). All numbers are produced by the released scripts from the per-image result files.
 
 \section{Prompt robustness per expansion level}
 \label{sup:robust}
@@ -31,8 +31,7 @@ Table~\ref{tab:sup_robust} lists the Dice values plotted in the main text's six-
   \centering
   \caption{Dice against box expansion for the six models of the main text's robustness figure. Mean $\pm$ std over three seeds where available.}
   \label{tab:sup_robust}
-  \scriptsize
-  \input{tables/supp_robustness_levels}
+  \resizebox{\linewidth}{!}{\input{tables/supp_robustness_levels}}
 \end{table}
 
 \begin{table}[htbp]
@@ -42,6 +41,18 @@ Table~\ref{tab:sup_robust} lists the Dice values plotted in the main text's six-
   \scriptsize
   \input{tables/supp_wilcoxon_levels}
 \end{table}
+
+\section{Hook placement}
+\label{sup:hooks}
+
+Figure~\ref{fig:sup_hooks} shows the hook-placement ablation summarised in the main text: LoRA trained with 20\,px jitter and no regulariser, with the CKA loss on decoder hooks, on encoder hooks, and on both, evaluated with tight boxes on the two far-OOD sets.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.5\linewidth]{figures/hook_ablation.png}
+  \caption{Far-OOD Dice by hook placement (LoRA, 20\,px training, tight-box evaluation). Bars: means over seeds 0 to 2 with one std; dots: individual seeds.}
+  \label{fig:sup_hooks}
+\end{figure}
 
 \section{Held-out mammography set (DMID)}
 \label{sup:dmid}
@@ -53,6 +64,32 @@ DMID was used once, after every model and every hyperparameter was fixed. Table~
   \caption{DMID, tight boxes, 269 images. HD95 in pixels on the 1024 grid.}
   \label{tab:sup_dmid}
   \input{tables/dmid}
+\end{table}
+
+\section{Failure detection: per-seed values and AUPRC}
+\label{sup:seeds}
+
+The main text's detector table averages over three seeds; the seed-1 and seed-2 checkpoints of the five ladder methods were trained for this purpose with the same configurations as seed 0. Table~\ref{tab:sup_perseed} lists the AUROC of each seed with its failure count, and Table~\ref{tab:sup_auprc} the AUPRC as mean $\pm$ std. Table~\ref{tab:sup_seed0} gives AUROC / AUPRC for seed 0 alone, the checkpoints used for the threshold sweep and the risk-coverage analysis.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Per-seed AUROC at tight boxes and the number of failures (Dice below 0.5) per seed. Cells with fewer than 20 failures omitted.}
+  \label{tab:sup_perseed}
+  \resizebox{\linewidth}{!}{\input{tables/supp_detectors_per_seed}}
+\end{table}
+
+\begin{table}[htbp]
+  \centering
+  \caption{AUPRC at tight boxes, mean $\pm$ std over three seeds (single value: seed 0 only).}
+  \label{tab:sup_auprc}
+  \resizebox{\linewidth}{!}{\input{tables/supp_detectors_auprc_multiseed}}
+\end{table}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Seed 0, tight boxes: AUROC / AUPRC for drift and the IoU estimate.}
+  \label{tab:sup_seed0}
+  \resizebox{\linewidth}{!}{\input{tables/supp_detectors_pm0_seed0}}
 \end{table}
 
 \section{Failure detection under 50\,px box jitter}
@@ -95,8 +132,7 @@ Ranking images by drift and flagging the top fraction for review gives, for each
   \centering
   \caption{Tight boxes, failure = Dice below 0.5, ranking by drift. Cells: recall of failures / residual failure rate among unflagged images when the top 10, 20, 30 or 50 percent of images are flagged.}
   \label{tab:sup_rc}
-  \scriptsize
-  \input{tables/supp_risk_coverage_pm0}
+  \resizebox{\linewidth}{!}{\input{tables/supp_risk_coverage_pm0}}
 \end{table}
 
 \begin{figure}[htbp]

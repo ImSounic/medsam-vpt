@@ -4,6 +4,8 @@ import pandas as pd
 
 from scripts.accv_tables import (
     calibration_table_tex,
+    detector_multiseed_table_tex,
+    detector_per_seed_table_tex,
     detector_table_tex,
     multiseed_table_tex,
     risk_coverage_table_tex,
@@ -307,3 +309,78 @@ def test_calibration_table(tmp_path):
     ).to_csv(csv, index=False)
     tex = calibration_table_tex(csv)
     assert "LoRA & 0.16 & 0.51 & 0.67 & 0.13 & 0.50 & 0.38" in tex
+
+
+def test_detector_multiseed_table_mean_std_and_single_seed(tmp_path):
+    csv = tmp_path / "ms.csv"
+    rows = []
+    for det, mean, std in [("drift", 0.956, 0.006), ("iou_pred", 0.55, 0.16)]:
+        rows.append(
+            {
+                "method": "lora",
+                "dataset": "busi",
+                "detector": det,
+                "n_seeds": 3,
+                "auroc_mean": mean,
+                "auroc_std": std,
+                "auprc_mean": 0.7,
+                "auprc_std": 0.05,
+                "n_fail_mean": 70,
+            }
+        )
+    rows.append(
+        {
+            "method": "zero_shot",
+            "dataset": "busi",
+            "detector": "iou_pred",
+            "n_seeds": 1,
+            "auroc_mean": 0.82,
+            "auroc_std": float("nan"),
+            "auprc_mean": 0.3,
+            "auprc_std": float("nan"),
+            "n_fail_mean": 8,
+        }
+    )
+    rows.append(
+        {
+            "method": "zero_shot",
+            "dataset": "busi",
+            "detector": "drift",
+            "n_seeds": 1,
+            "auroc_mean": 0.5,
+            "auroc_std": float("nan"),
+            "auprc_mean": 0.0,
+            "auprc_std": float("nan"),
+            "n_fail_mean": 8,
+        }
+    )
+    pd.DataFrame(rows).to_csv(csv, index=False)
+    tex = detector_multiseed_table_tex(csv, datasets=("busi",))
+    assert "LoRA & 0.96 $\\pm$ 0.01 & 0.55 $\\pm$ 0.16" in tex
+    assert "Zero-shot & -- & 0.82" in tex
+
+
+def test_detector_per_seed_table_marks_low_failure_seeds(tmp_path):
+    csv = tmp_path / "per_seed.csv"
+    rows = []
+    for seed, nf, a in [(0, 61, 0.95), (1, 82, 0.96), (2, 10, 0.70)]:
+        for det in ("drift", "iou_pred"):
+            rows.append(
+                {
+                    "run_name": f"lora_seed{seed}",
+                    "dataset": "busi",
+                    "detector": det,
+                    "threshold": 0.5,
+                    "auroc": a,
+                    "auprc": 0.5,
+                    "n": 647,
+                    "n_fail": nf,
+                    "method": "lora",
+                    "seed": seed,
+                }
+            )
+    pd.DataFrame(rows).to_csv(csv, index=False)
+    tex = detector_per_seed_table_tex(csv, datasets=("busi",))
+    assert (
+        "LoRA & BUSI (far-OOD) & 0.95 & 0.96 & -- & 0.95 & 0.96 & -- & 61/82/10" in tex
+    )

@@ -276,6 +276,103 @@ def calibration_table_tex(calibration_csv: Path, datasets=("busi", "cbis_ddsm"))
     return "\n".join(lines) + "\n"
 
 
+# Method keys as produced by scripts.detector_multiseed.split_run (seed suffix stripped).
+MULTISEED_METHOD_LABEL = {
+    "zero_shot": "Zero-shot",
+    "decoder_only": "Decoder-only FT",
+    "vpt_shallow": "VPT-shallow",
+    "vpt_deep": "VPT-deep",
+    "lora": "LoRA",
+    "lora_encoder_only": "Encoder-only LoRA",
+    "full_ft": "Full FT",
+}
+
+
+def _pm(mean: float, std: float, n: int) -> str:
+    return f"{mean:.2f} $\\pm$ {std:.2f}" if n > 1 and std == std else f"{mean:.2f}"
+
+
+def detector_multiseed_table_tex(
+    multiseed_csv: Path, datasets=("busi", "cbis_ddsm", "dmid"), metric: str = "auroc"
+) -> str:
+    """Main text: AUROC (or AUPRC) mean +- std over seeds per method, dataset and detector."""
+    m = pd.read_csv(multiseed_csv)
+    cols = " & ".join(
+        f"\\multicolumn{{2}}{{c}}{{{DATASET_LABEL.get(d, d)}}}" for d in datasets
+    )
+    sub = " & ".join("drift & IoU head" for _ in datasets)
+    lines = [
+        r"\begin{tabular}{l" + "cc" * len(datasets) + "}",
+        r"\toprule",
+        f"Method & {cols} \\\\",
+        f" & {sub} \\\\",
+        r"\midrule",
+    ]
+    for key, label in MULTISEED_METHOD_LABEL.items():
+        if key not in set(m.method):
+            continue
+        cells = []
+        for ds in datasets:
+            for det in ("drift", "iou_pred"):
+                r = m[(m.method == key) & (m.dataset == ds) & (m.detector == det)]
+                if not len(r) or (key == "zero_shot" and det == "drift"):
+                    cells.append("--")
+                else:
+                    r = r.iloc[0]
+                    cells.append(
+                        _pm(r[f"{metric}_mean"], r[f"{metric}_std"], int(r.n_seeds))
+                    )
+        lines.append(f"{label} & " + " & ".join(cells) + r" \\")
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    return "\n".join(lines) + "\n"
+
+
+def detector_per_seed_table_tex(
+    per_seed_csv: Path, datasets=("busi", "cbis_ddsm", "dmid"), min_fail: int = 20
+) -> str:
+    """Supplement: drift and IoU-head AUROC per seed, with the failure count per seed."""
+    p = pd.read_csv(per_seed_csv)
+    seeds = sorted(p.seed.unique())
+    head = " & ".join(f"s{s}" for s in seeds)
+    lines = [
+        r"\begin{tabular}{ll" + "c" * (2 * len(seeds)) + "l}",
+        r"\toprule",
+        f"Method & Dataset & \\multicolumn{{{len(seeds)}}}{{c}}{{drift AUROC}} & "
+        f"\\multicolumn{{{len(seeds)}}}{{c}}{{IoU-head AUROC}} & Failures \\\\",
+        f" & & {head} & {head} & \\\\",
+        r"\midrule",
+    ]
+    for key, label in MULTISEED_METHOD_LABEL.items():
+        for ds in datasets:
+            g = p[(p.method == key) & (p.dataset == ds)]
+            if not len(g):
+                continue
+            cells, fails = [], []
+            for det in ("drift", "iou_pred"):
+                for s in seeds:
+                    r = g[(g.detector == det) & (g.seed == s)]
+                    if (
+                        not len(r)
+                        or int(r.n_fail.iloc[0]) < min_fail
+                        or (key == "zero_shot" and det == "drift")
+                    ):
+                        cells.append("--")
+                    else:
+                        cells.append(f"{float(r.auroc.iloc[0]):.2f}")
+            for s in seeds:
+                r = g[(g.detector == "iou_pred") & (g.seed == s)]
+                fails.append(str(int(r.n_fail.iloc[0])) if len(r) else "--")
+            lines.append(
+                f"{label} & {DATASET_LABEL.get(ds, ds)} & "
+                + " & ".join(cells)
+                + " & "
+                + "/".join(fails)
+                + r" \\"
+            )
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    return "\n".join(lines) + "\n"
+
+
 CKA_LABEL = [
     (
         r"^lora_cka_oodonly_late_l10_seed\d+$",
@@ -356,6 +453,11 @@ def main(argv: list[str] | None = None) -> int:
         / "results/accv/failure_detection_pm50_sweep/detector_metrics.csv",
     )
     ap.add_argument(
+        "--multiseed-detector-dir",
+        type=Path,
+        default=REPO_ROOT / "results/accv/failure_detection_multiseed",
+    )
+    ap.add_argument(
         "--risk-coverage-csv",
         type=Path,
         default=REPO_ROOT / "results/accv/risk_coverage_pm0/review_points.csv",
@@ -381,8 +483,21 @@ def main(argv: list[str] | None = None) -> int:
         if args.detector_csv_dmid.exists():
             csvs.append(args.detector_csv_dmid)
             datasets.append("dmid")
-        (args.out_dir / "detectors_pm0.tex").write_text(
+        (args.out_dir / "supp_detectors_pm0_seed0.tex").write_text(
             detector_table_tex(csvs, datasets=datasets, with_auprc=True)
+        )
+    ms_csv = args.multiseed_detector_dir / "detector_metrics_multiseed.csv"
+    if ms_csv.exists():
+        (args.out_dir / "detectors_pm0.tex").write_text(
+            detector_multiseed_table_tex(ms_csv)
+        )
+        (args.out_dir / "supp_detectors_auprc_multiseed.tex").write_text(
+            detector_multiseed_table_tex(ms_csv, metric="auprc")
+        )
+    per_seed = args.multiseed_detector_dir / "per_seed.csv"
+    if per_seed.exists():
+        (args.out_dir / "supp_detectors_per_seed.tex").write_text(
+            detector_per_seed_table_tex(per_seed)
         )
     if args.sweep_csv.exists():
         (args.out_dir / "supp_threshold_sweep_pm0.tex").write_text(
