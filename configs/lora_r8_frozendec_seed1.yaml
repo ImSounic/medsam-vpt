@@ -1,0 +1,38 @@
+# T10 (camera-ready, kTc3 W1 / SNjd): standard rank-8 QKV LoRA with the mask decoder frozen.
+
+name: lora_r8_frozendec_seed1
+method: lora
+seed: 1
+
+method_kwargs:
+  rank: 8
+  alpha: 16
+  dropout: 0.0
+  train_mask_decoder: false
+  target_modules: qkv
+
+model:
+  arch: vit_b
+  checkpoint: checkpoints/medsam_vit_b.pth
+  image_size: 1024
+
+data:
+  root: data
+  bbox_perturb_pixels: 0
+
+train:
+  batch_size: 1
+  num_workers: 2
+  epochs: 6
+  lr: 5.0e-4
+  weight_decay: 0.0
+  dice_weight: 0.5
+  amp: true
+  cooldown_seconds: 60
+
+eval:
+  batch_size: 1
+  num_workers: 2
+
+output:
+  checkpoint_dir: checkpoints/runs_accv_t10

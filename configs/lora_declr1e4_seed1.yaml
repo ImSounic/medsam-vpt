@@ -1,0 +1,37 @@
+# T10 (camera-ready, SNjd LR confound): standard LoRA, mask decoder trained at 1e-4.
+
+name: lora_declr1e4_seed1
+method: lora
+seed: 1
+
+method_kwargs:
+  rank: 8
+  alpha: 16
+  dropout: 0.0
+
+model:
+  arch: vit_b
+  checkpoint: checkpoints/medsam_vit_b.pth
+  image_size: 1024
+
+data:
+  root: data
+  bbox_perturb_pixels: 0
+
+train:
+  batch_size: 1
+  num_workers: 2
+  epochs: 6
+  lr: 5.0e-4
+  decoder_lr: 1.0e-4   # mask decoder at the decoder-only LR
+  weight_decay: 0.0
+  dice_weight: 0.5
+  amp: true
+  cooldown_seconds: 60
+
+eval:
+  batch_size: 1
+  num_workers: 2
+
+output:
+  checkpoint_dir: checkpoints/runs_accv_t10

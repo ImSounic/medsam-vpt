@@ -31,6 +31,7 @@ def _bash_array(text: str, name: str) -> list[str]:
         ("accv_t5.sbatch", "CONFIGS", 4),
         ("accv_t6.sbatch", "CONFIGS", 18),
         ("accv_t9.sbatch", "CONFIGS", 10),
+        ("accv_t10.sbatch", "CONFIGS", 6),
     ],
 )
 def test_train_arrays_match_configs(script, var, n):
@@ -70,6 +71,7 @@ def test_t3_array_covers_two_prompt_levels():
         "accv_t7.sbatch",
         "accv_t8.sbatch",
         "accv_t9.sbatch",
+        "accv_t10.sbatch",
         "submit_accv.sh",
         "sync_to_hpc.sh",
     ],
@@ -126,3 +128,16 @@ def test_t9_retrains_seed_checkpoints_that_t8_evaluates():
     assert all((REPO / "configs" / c).exists() for c in cfgs)
     assert sorted({c.rsplit("_seed", 1)[1] for c in cfgs}) == ["1.yaml", "2.yaml"]
     assert "--array=0-9" in t9
+
+
+def test_t10_configs_isolate_one_change_each():
+    import yaml
+
+    base = yaml.safe_load((REPO / "configs" / "lora_seed1.yaml").read_text())
+    for s in (0, 1, 2):
+        frz = yaml.safe_load((REPO / "configs" / f"lora_r8_frozendec_seed{s}.yaml").read_text())
+        assert frz["method_kwargs"] == {**base["method_kwargs"], "train_mask_decoder": False, "target_modules": "qkv"}
+        assert frz["train"] == base["train"] and frz["seed"] == s
+        dlr = yaml.safe_load((REPO / "configs" / f"lora_declr1e4_seed{s}.yaml").read_text())
+        assert dlr["method_kwargs"] == base["method_kwargs"]
+        assert dlr["train"] == {**base["train"], "decoder_lr": 1e-4} and dlr["seed"] == s

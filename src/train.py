@@ -254,6 +254,19 @@ def train_one_epoch(
     return out
 
 
+def build_param_groups(
+    sam: torch.nn.Module, *, lr: float, decoder_lr: float | None = None
+) -> list[dict]:
+    """AdamW groups over trainable params; decoder_lr gives the mask decoder its own LR."""
+    if decoder_lr is None:
+        return [{"params": [p for p in sam.parameters() if p.requires_grad], "lr": lr}]
+    dec_ids = {id(p) for p in sam.mask_decoder.parameters()}
+    rest = [p for p in sam.parameters() if p.requires_grad and id(p) not in dec_ids]
+    dec = [p for p in sam.mask_decoder.parameters() if p.requires_grad]
+    groups = [{"params": rest, "lr": lr}, {"params": dec, "lr": decoder_lr}]
+    return [g for g in groups if g["params"]]
+
+
 @torch.no_grad()
 def validate(sam, loader, device, *, amp: bool) -> dict:
     sam.eval()
@@ -401,10 +414,13 @@ def main() -> int:
     )
 
     # Optimizer / scheduler
-    trainable = [p for p in sam.parameters() if p.requires_grad]
+    decoder_lr = cfg["train"].get("decoder_lr")
     optimizer = AdamW(
-        trainable,
-        lr=float(cfg["train"]["lr"]),
+        build_param_groups(
+            sam,
+            lr=float(cfg["train"]["lr"]),
+            decoder_lr=None if decoder_lr is None else float(decoder_lr),
+        ),
         weight_decay=float(cfg["train"].get("weight_decay", 0.0)),
     )
     budget = resolve_budget(cfg["train"])
