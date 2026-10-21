@@ -6,3 +6,4 @@ supplement.pdf
 *.aux
 *.bbl
 *.out
+build/

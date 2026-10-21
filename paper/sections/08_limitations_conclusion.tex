@@ -1,6 +1,11 @@
-\section{Limitations and Conclusion}
+\section{Limitations, Recommendations and Conclusion}
 \label{sec:limits}
 
-All models are adapted on dermoscopy, so we have not shown that the anchors help when a far-OOD set is the training domain. The drift curves and the full-data budget point are single-seed, and far-OOD variance on mammography is large for every method. The CKA loss adds about 30 percent to training time; the drift signal needs a base-model forward and is weak on DMID; the regularised model inherits the base's sensitivity to loose boxes in-domain.
+\paragraph{Limitations.}
+All models are adapted on dermoscopy, and the far-OOD modalities are part of MedSAM's pretraining, so we study the loss of base competence rather than transfer to an unseen modality; DMID is a new source but not a new modality. The probe contains both far-OOD domains (unlabelled) and overlaps the BUSI test images; an in-domain or third-modality probe was not tested. $\lambda$ was chosen from three values and may be higher at its optimum, possibly per domain. We did not separate the three decoder hook terms, apply the loss to VPT, or compare it with weight interpolation~\cite{wortsman2022wiseft}, feature protection~\cite{tan2024protection} or an $L_2$ feature penalty. The drift panel and full-data budget point are single-seed; mammography variance is large for every method; the CKA loss adds about 30 percent to training time.
 
-Within those bounds, far-OOD failure of adapted MedSAM arises where the mask decoder's representations leave the base model's, when encoder and decoder adapt together without an anchor; a decoder anchor removes much of the failure at no in-domain cost, an encoder anchor alone makes it worse, and for LoRA the size of the departure on a single image is a label-free failure signal that holds on a domain used for nothing else.
+\paragraph{Recommendations.}
+Within this setting: if far-OOD accuracy matters, prefer full or decoder-only fine-tuning; if LoRA is required, anchor its decoder (or both halves) with an unlabelled probe from the domains to be protected, at $\lambda = 10$ with mild prompt jitter, and never the encoder alone; use per-image drift to triage a LoRA model's far-OOD predictions only with tight prompts and a base-model forward available.
+
+\paragraph{Conclusion.}
+Far-OOD failure of adapted MedSAM arises where the decoder's representations leave the base model's, when encoder and decoder adapt together at PEFT learning rates; the decoder is where it can be reduced and, for LoRA, monitored.

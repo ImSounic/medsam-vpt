@@ -66,6 +66,69 @@ def multiseed_table_tex(
     return "\n".join(lines) + "\n"
 
 
+SHORT_DATASET_LABEL = {
+    "isic2018_test": "ISIC",
+    "ph2": "PH2",
+    "busi": "BUSI",
+    "cbis_ddsm": "CBIS-DDSM",
+}
+
+# Camera-ready Table 1: 20 px training, tight-box evaluation. None draws a \midrule.
+METHOD_TABLE_ROWS = [
+    ("Zero-shot", r"^zero_shot$"),
+    None,
+    ("LoRA", r"^lora_seed\d_pm20$"),
+    ("\\quad + CKA, encoder", r"^lora_cka_oodonly_enc_l10_pm20_seed\d$"),
+    ("\\quad + CKA, decoder", r"^lora_cka_oodonly_late_l10_pm20_seed\d$"),
+    ("\\quad + CKA, both", r"^lora_cka_oodonly_both_l10_pm20_seed\d$"),
+    None,
+    ("Decoder-only FT", r"^decoder_only_seed\d_pm20$"),
+    ("Full FT", r"^full_ft_seed\d_pm20$"),
+]
+METHOD_TABLE_CSVS = [
+    "results/runs_pm20.csv",
+    "results/runs_seed1_pm20.csv",
+    "results/runs_seed2_pm20.csv",
+    "cka/results/runs_cka_oodonly_late_l10_pm20.csv",
+    "cka/results/runs_accv_t1.csv",
+    "cka/results/runs_accv_t5.csv",
+]
+
+
+def method_table_tex(runs_csvs, rows, datasets=DATASET_ORDER) -> str:
+    """Mean $\\pm$ std (ddof 1, over distinct runs) of Dice per method row and dataset."""
+    df = pd.concat(
+        [pd.read_csv(p, usecols=["run_name", "dataset", "dice_mean"]) for p in runs_csvs],
+        ignore_index=True,
+    ).drop_duplicates(["run_name", "dataset"])
+    lines = [
+        r"\begin{tabular}{l" + "c" * len(datasets) + "}",
+        r"\toprule",
+        "Method & " + " & ".join(SHORT_DATASET_LABEL.get(d, d) for d in datasets) + r" \\",
+        r"\midrule",
+    ]
+    for row in rows:
+        if row is None:
+            lines.append(r"\midrule")
+            continue
+        label, pattern = row
+        sub = df[df.run_name.str.match(pattern)]
+        if sub.empty:
+            continue
+        cells = []
+        for ds in datasets:
+            v = sub.loc[sub.dataset == ds, "dice_mean"]
+            if v.empty:
+                cells.append("--")
+            elif len(v) == 1:
+                cells.append(f"{v.iloc[0]:.3f}")
+            else:
+                cells.append(f"{v.mean():.3f} $\\pm$ {v.std(ddof=1):.3f}")
+        lines.append(f"{label} & " + " & ".join(cells) + r" \\")
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    return "\n".join(lines) + "\n"
+
+
 def _read_metrics(csvs) -> pd.DataFrame:
     """Concatenate detector_metrics.csv files (e.g. the ladder run and the DMID run)."""
     paths = [csvs] if isinstance(csvs, (str, Path)) else list(csvs)
@@ -469,6 +532,10 @@ def main(argv: list[str] | None = None) -> int:
             args.multiseed_dir / "seed_table.csv",
             args.multiseed_dir / "paired_wilcoxon.csv",
         )
+    )
+    method_csvs = [REPO_ROOT / p for p in METHOD_TABLE_CSVS if (REPO_ROOT / p).exists()]
+    (args.out_dir / "method_comparison.tex").write_text(
+        method_table_tex(method_csvs, METHOD_TABLE_ROWS)
     )
     (args.out_dir / "detectors_pm50.tex").write_text(
         detector_table_tex(args.detector_csv, with_auprc=True)

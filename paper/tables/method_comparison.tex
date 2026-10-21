@@ -1,0 +1,15 @@
+\begin{tabular}{lcccc}
+\toprule
+Method & ISIC & PH2 & BUSI & CBIS-DDSM \\
+\midrule
+Zero-shot & 0.907 & 0.905 & 0.823 & 0.692 \\
+\midrule
+LoRA & 0.949 $\pm$ 0.002 & 0.951 $\pm$ 0.001 & 0.774 $\pm$ 0.032 & 0.437 $\pm$ 0.095 \\
+\quad + CKA, encoder & 0.948 $\pm$ 0.001 & 0.952 $\pm$ 0.002 & 0.725 $\pm$ 0.023 & 0.357 $\pm$ 0.059 \\
+\quad + CKA, decoder & 0.952 $\pm$ 0.002 & 0.954 $\pm$ 0.002 & 0.826 $\pm$ 0.008 & 0.541 $\pm$ 0.095 \\
+\quad + CKA, both & 0.950 $\pm$ 0.001 & 0.952 $\pm$ 0.002 & 0.834 $\pm$ 0.027 & 0.626 $\pm$ 0.098 \\
+\midrule
+Decoder-only FT & 0.946 $\pm$ 0.000 & 0.945 $\pm$ 0.003 & 0.881 $\pm$ 0.002 & 0.782 $\pm$ 0.004 \\
+Full FT & 0.956 $\pm$ 0.001 & 0.954 $\pm$ 0.001 & 0.900 $\pm$ 0.005 & 0.805 $\pm$ 0.006 \\
+\bottomrule
+\end{tabular}

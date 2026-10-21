@@ -1,30 +1,32 @@
 % ACCV 2026 Workshop on Trustworthy Foundation Models in Medical Imaging (TrustFMI).
-% Draft scaffold on the Springer llncs class; move into the official ACCV 2026
-% template before submission and keep splncs04. Double-blind: no names, no links.
+% Camera-ready on the official ACCV 2026 template (accv.sty in final mode), splncs04.
+% Build with pdflatex (Overleaf). axessibility needs pdfTeX: the local tectonic/XeTeX
+% check comments the axessibility line out (see scripts/build_paper_local.sh).
 \documentclass[runningheads]{llncs}
+\usepackage{accv}
+\usepackage{accvabbrv}
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{amsmath,amssymb}
 \usepackage{multirow}
 \usepackage{xcolor}
-\usepackage[hidelinks]{hyperref}
+\usepackage[accsupp]{axessibility}
+\usepackage{hyperref}
+\usepackage{orcidlink}
 % Numbers that update when the last jobs finish are wrapped in \pending{}.
 \newcommand{\pending}[1]{\textcolor{blue}{#1}}
 \newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
-% Float spacing: let text and floats share pages more tightly (no font or margin changes).
-\renewcommand{\topfraction}{0.9}
-\renewcommand{\textfraction}{0.05}
-\renewcommand{\floatpagefraction}{0.8}
-\setlength{\textfloatsep}{10pt plus 2pt minus 4pt}
-\setlength{\abovecaptionskip}{4pt}
 
 \begin{document}
 
-\title{Protect the Decoder: Representation-Preserving Adaptation and Failure Detection for Far-OOD MedSAM}
+\title{Protect the Decoder: Understanding and Mitigating Representation Drift in MedSAM}
 \titlerunning{Protect the Decoder}
-\author{Anonymous Submission}
-\authorrunning{Anonymous}
-\institute{Paper ID \todo{OpenReview ID}}
+\author{Sounic Akkaraju\orcidlink{0009-0003-7888-4176} \and
+Carlo Baretta\orcidlink{0009-0006-6680-1275} \and
+Alexia Briassouli\orcidlink{0000-0002-0545-3215}}
+\authorrunning{S.~Akkaraju et al.}
+\institute{University of Twente, Enschede, The Netherlands\\
+\email{\{s.akkaraju,c.d.a.baretta\}@student.utwente.nl, a.briassouli@utwente.nl}}
 
 \maketitle
 
@@ -37,7 +39,7 @@
 \input{sections/06_results_budget}
 \input{sections/07_results_detection}
 \input{sections/08_limitations_conclusion}
-% \input{sections/09_declarations}   % camera-ready only (breaks anonymity)
+\input{sections/09_declarations}
 
 \bibliographystyle{splncs04}
 \bibliography{refs}

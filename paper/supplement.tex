@@ -1,11 +1,14 @@
-% Supplementary material for the ACCV 2026 TrustFMI submission "Protect the Decoder".
-% Same class and conventions as main.tex; double-blind, no names or links.
+% Supplementary material for the ACCV 2026 TrustFMI camera-ready "Protect the Decoder".
+% Same class and template as main.tex.
 \documentclass[runningheads]{llncs}
+\usepackage{accv}
+\usepackage{accvabbrv}
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{amsmath,amssymb}
 \usepackage{multirow}
-\usepackage[hidelinks]{hyperref}
+\usepackage[accsupp]{axessibility}
+\usepackage{hyperref}
 \renewcommand{\thetable}{S\arabic{table}}
 \renewcommand{\thefigure}{S\arabic{figure}}
 \renewcommand{\thesection}{S\arabic{section}}
@@ -14,22 +17,29 @@
 
 \title{Supplementary Material: Protect the Decoder}
 \titlerunning{Protect the Decoder: Supplement}
-\author{Anonymous Submission}
-\authorrunning{Anonymous}
-\institute{}
+\author{Sounic Akkaraju \and Carlo Baretta \and Alexia Briassouli}
+\authorrunning{S.~Akkaraju et al.}
+\institute{University of Twente, Enschede, The Netherlands}
 
 \maketitle
 
-This supplement holds the tables and figures the main text refers to: the prompt-robustness numbers behind the six-curve figure with their paired tests (Sect.~\ref{sup:robust}), the hook-placement figure (Sect.~\ref{sup:hooks}), the held-out DMID results (Sect.~\ref{sup:dmid}), per-seed and AUPRC values for the failure detectors (Sect.~\ref{sup:seeds}), the 50\,px failure-detection table (Sect.~\ref{sup:pm50}), the failure-threshold sensitivity check (Sect.~\ref{sup:thresh}), the risk-coverage analysis behind the review-budget numbers (Sect.~\ref{sup:rc}), and the calibration of the decoder's IoU estimate (Sect.~\ref{sup:cal}). All numbers are produced by the released scripts from the per-image result files.
+This supplement holds the tables and figures the main text refers to: the prompt-robustness curves and numbers with their paired tests (Sect.~\ref{sup:robust}), the overlap of the CKA probe with the evaluation sets (Sect.~\ref{sup:overlap}), the hook-placement figure (Sect.~\ref{sup:hooks}), the held-out DMID results (Sect.~\ref{sup:dmid}), per-seed and AUPRC values for the failure detectors (Sect.~\ref{sup:seeds}), the 50\,px failure-detection table (Sect.~\ref{sup:pm50}), the failure-threshold sensitivity check (Sect.~\ref{sup:thresh}), the risk-coverage analysis behind the review-budget numbers (Sect.~\ref{sup:rc}), and the calibration of the decoder's IoU estimate (Sect.~\ref{sup:cal}). All numbers are produced by the released scripts from the per-image result files.
 
 \section{Prompt robustness per expansion level}
 \label{sup:robust}
 
-Table~\ref{tab:sup_robust} lists the Dice values plotted in the main text's six-curve figure: LoRA with and without the decoder CKA loss under three training regimes (tight boxes, 20\,px jitter, random jitter up to 100\,px), evaluated with boxes expanded outward by up to 0, 20, 50, 100 and 200\,px. Entries with a standard deviation are means over seeds 0 to 2; the others are seed 0. Table~\ref{tab:sup_wilcoxon} gives the paired Wilcoxon signed-rank test between the two 20\,px-trained models at each level, pairs matched on seed and image, with Holm correction over the four datasets at each level.
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.8\linewidth]{figures/robustness_six_curves.png}
+  \caption{Dice against outward box expansion for LoRA with (red) and without (grey) the decoder CKA loss under three training regimes: tight (solid), 20\,px jitter (dashed), random jitter up to 100\,px (dotted). Bands: one std over three seeds where available.}
+  \label{fig:sup_curves}
+\end{figure}
+
+Figure~\ref{fig:sup_curves} and Table~\ref{tab:sup_robust} give prompt robustness for LoRA with and without the decoder CKA loss under three training regimes (tight boxes, 20\,px jitter, random jitter up to 100\,px), evaluated with boxes expanded outward by up to 0, 20, 50, 100 and 200\,px. Entries with a standard deviation are means over seeds 0 to 2; the others are seed 0. Table~\ref{tab:sup_wilcoxon} gives the paired Wilcoxon signed-rank test between the two 20\,px-trained models at each level, pairs matched on seed and image, with Holm correction over the four datasets at each level.
 
 \begin{table}[htbp]
   \centering
-  \caption{Dice against box expansion for the six models of the main text's robustness figure. Mean $\pm$ std over three seeds where available.}
+  \caption{Dice against box expansion for the six models of Fig.~\ref{fig:sup_curves}. Mean $\pm$ std over three seeds where available.}
   \label{tab:sup_robust}
   \resizebox{\linewidth}{!}{\input{tables/supp_robustness_levels}}
 \end{table}
@@ -41,6 +51,11 @@ Table~\ref{tab:sup_robust} lists the Dice values plotted in the main text's six-
   \scriptsize
   \input{tables/supp_wilcoxon_levels}
 \end{table}
+
+\section{Overlap of the CKA probe with the evaluation sets}
+\label{sup:overlap}
+
+The 32-image probe (seed 42) takes its 16 mammograms from the CBIS-DDSM training split, but BUSI has no official split, so its 16 ultrasound probe images are drawn from the same 647 images that are evaluated, and one probe patient (P\_01467) also has CBIS-DDSM test images. The probe is used without labels and with synthetic boxes. Recomputing mean Dice without the overlapping images for every run with per-image results (144 files per dataset, tight boxes and 20\,px evaluation jitter; \texttt{scripts/probe\_overlap.py}) changes BUSI Dice by at most 0.003 (0.002 for CKA-regularised runs; mean change $+0.0002$) and CBIS-DDSM Dice by at most 0.0014 (0.0009). No comparison in the paper changes.
 
 \section{Hook placement}
 \label{sup:hooks}
